@@ -43,7 +43,9 @@ export function autoMapHeaders(headers:string[], sourceType:ImportSourceType):Fi
   return map;
 }
 
-const vndInteger = z.union([z.string(), z.number()]).transform(String).refine((v)=>new Decimal(v.replace(/,/g,"" )).isInteger(), "VND金额必须为整数");
+const vndAmount = z.union([z.string(), z.number()]).transform(String).refine((v)=>{
+  try{return new Decimal(v.replace(/,/g,"" )).decimalPlaces()<=2;}catch{return false;}
+}, "金额最多保留两位小数");
 const baseStatus = z.union([z.string(),z.number()]).transform((v)=>{
   const value=String(v).trim().toUpperCase();
   if(["成功","已完成","SUCCESS","COMPLETED"].includes(value))return "SUCCESS";
@@ -53,8 +55,8 @@ const baseStatus = z.union([z.string(),z.number()]).transform((v)=>{
   return value||"PENDING";
 });
 const timestamp = z.union([z.string(),z.date()]).transform((v)=>v instanceof Date?v.toISOString():v).pipe(z.string().min(1));
-const payinSchema = z.object({ order_number:z.union([z.string(),z.number()]).transform(String).pipe(z.string().min(1)), payin_amount_vnd:vndInteger, status:baseStatus, created_at:timestamp, completed_at:timestamp.optional(), imported_transaction_fee_vnd:vndInteger.optional(), target_amount_vnd:vndInteger.optional() }).passthrough();
-const payoutSchema = z.object({ order_number:z.union([z.string(),z.number()]).transform(String).pipe(z.string().min(1)), payout_amount_vnd:vndInteger, ar_rate:z.union([z.string(),z.number()]).transform(String), as_rate:z.union([z.string(),z.number()]).transform(String), ap_imported:z.union([z.string(),z.number()]).transform(String), aq_imported:z.union([z.string(),z.number()]).transform(String), status:baseStatus, created_at:timestamp, completed_at:timestamp.optional() }).passthrough();
+const payinSchema = z.object({ order_number:z.union([z.string(),z.number()]).transform(String).pipe(z.string().min(1)), payin_amount_vnd:vndAmount, status:baseStatus, created_at:timestamp, completed_at:timestamp.optional(), imported_transaction_fee_vnd:vndAmount.optional(), target_amount_vnd:vndAmount.optional() }).passthrough();
+const payoutSchema = z.object({ order_number:z.union([z.string(),z.number()]).transform(String).pipe(z.string().min(1)), payout_amount_vnd:vndAmount, ar_rate:z.union([z.string(),z.number()]).transform(String).optional(), as_rate:z.union([z.string(),z.number()]).transform(String).optional(), ap_imported:z.union([z.string(),z.number()]).transform(String).optional(), aq_imported:z.union([z.string(),z.number()]).transform(String).optional(), status:baseStatus, created_at:timestamp, completed_at:timestamp.optional() }).passthrough();
 
 export interface ValidatedRow { rowNumber:number; status:"VALID"|"INVALID"|"DUPLICATE"; data:Record<string,unknown>; errors:string[]; rawRowHash:string; diagnostics?:Record<string,unknown>; }
 export function validateRows(rows:Record<string,unknown>[], mapping:FieldMap, sourceType:ImportSourceType):ValidatedRow[] {
@@ -70,7 +72,7 @@ export function validateRows(rows:Record<string,unknown>[], mapping:FieldMap, so
     const data = parsed.data as Record<string,unknown>;
     const diagnostics:Record<string,unknown> = {};
     if (sourceType === "PAYIN" && data.imported_transaction_fee_vnd) diagnostics.feeValidation = validateImportedFee(String(data.payin_amount_vnd).replace(/,/g,""),String(data.imported_transaction_fee_vnd).replace(/,/g,""));
-    if (sourceType === "PAYOUT") diagnostics.apValidation = validateAp(String(data.ar_rate),String(data.as_rate),String(data.ap_imported));
+    if (sourceType === "PAYOUT"&&data.ar_rate&&data.as_rate&&data.ap_imported) diagnostics.apValidation = validateAp(String(data.ar_rate),String(data.as_rate),String(data.ap_imported));
     return { rowNumber:index+2,status:"VALID",data,errors:[],rawRowHash,diagnostics };
   });
 }

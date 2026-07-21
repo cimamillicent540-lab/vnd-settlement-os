@@ -9,6 +9,6 @@ function groupedDecimal(value:string|number,fractionDigits:number){
   const grouped=integer.replace(/\B(?=(\d{3})+(?!\d))/g,",");
   return fraction===undefined?grouped:`${grouped}.${fraction}`;
 }
-export function formatVnd(value: string | number) { return `${groupedDecimal(value,0)} ₫`; }
+export function formatVnd(value: string | number) { return `${groupedDecimal(value,2)} ₫`; }
 export function formatUsdt(value: string | number, fractionDigits = 0) { return `${groupedDecimal(value,fractionDigits)} USDT`; }
 export function formatRate(value: string | number, fractionDigits = 2) { return groupedDecimal(value,fractionDigits); }

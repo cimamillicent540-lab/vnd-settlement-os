@@ -11,20 +11,25 @@ export const RULES = Object.freeze({
   minimumNetMargin: "0.002",
   targetNetMargin: "0.005",
   timezone: "UTC",
+  sourceTimezone: "UTC+8",
+  balanceRoundingToleranceVnd: "1",
+  openingBalanceVnd: "6796457582.28",
+  openingEffectiveAt: "2026-07-17T00:00:00Z",
+  accountBalanceMultiplier: "2",
 });
 
 export type OrderStatus = "SUCCESS" | "FAILED" | "TIMEOUT" | "CANCELLED" | "PENDING";
-export type CostBasisStatus = "KNOWN" | "MISSING" | "ESTIMATED";
+export type CostBasisStatus = "KNOWN" | "MISSING" | "ESTIMATED" | "NOT_APPLICABLE";
 
 export function calculatePayinEconomics(amountVnd: string, status: OrderStatus = "SUCCESS") {
   const amount = new Decimal(amountVnd);
-  if (!amount.isInteger() || amount.isNegative()) throw new Error("VND amount must be a non-negative integer");
-  const expectedFeeRevenue = amount.mul(RULES.payinFeeRate).toDecimalPlaces(0, Decimal.ROUND_HALF_UP);
+  if (amount.decimalPlaces() > 2 || amount.isNegative()) throw new Error("VND amount must be non-negative with at most two decimals");
+  const expectedFeeRevenue = amount.mul(RULES.payinFeeRate).toDecimalPlaces(2, Decimal.ROUND_HALF_UP);
   const upstreamFee = new Decimal(status === "SUCCESS" ? RULES.upstreamPayinSuccessFeeVnd : status === "FAILED" ? RULES.upstreamPayinFailureFeeVnd : "0");
   return {
-    expectedFeeRevenueVnd: expectedFeeRevenue.toFixed(0),
-    upstreamFeeAppliedVnd: upstreamFee.toFixed(0),
-    netFeeContributionVnd: expectedFeeRevenue.minus(upstreamFee).toFixed(0),
+    expectedFeeRevenueVnd: expectedFeeRevenue.toFixed(2),
+    upstreamFeeAppliedVnd: upstreamFee.toFixed(2),
+    netFeeContributionVnd: expectedFeeRevenue.minus(upstreamFee).toFixed(2),
   };
 }
 
@@ -32,8 +37,8 @@ export function validateImportedFee(amountVnd: string, importedFeeVnd: string, t
   const expected = new Decimal(calculatePayinEconomics(amountVnd).expectedFeeRevenueVnd);
   const difference = new Decimal(importedFeeVnd).minus(expected);
   return {
-    expectedFeeRevenueVnd: expected.toFixed(0),
-    differenceVnd: difference.toFixed(0),
+    expectedFeeRevenueVnd: expected.toFixed(2),
+    differenceVnd: difference.toFixed(2),
     status: difference.abs().lte(toleranceVnd) ? "MATCH" as const : "MISMATCH" as const,
   };
 }
@@ -63,7 +68,7 @@ export function aqDiagnostics(ap: string, aq: string) {
 
 export interface PoolBucketInput {
   id: string;
-  sourceType: "OPENING" | "PAYIN" | "TOPUP" | "ADJUSTMENT";
+  sourceType: "OPENING" | "PAYIN" | "PAYIN_INTERNAL_NETTING" | "TOPUP" | "ADJUSTMENT";
   availableAmountVnd: string;
   fundingRateVndPerUsdt?: string | null;
   costBasisStatus: CostBasisStatus;
@@ -85,10 +90,10 @@ export class InsufficientPoolBalanceError extends Error {
 
 export function allocatePayoutProportionally(buckets: PoolBucketInput[], payoutAmountVnd: string): PoolAllocation[] {
   const payout = new Decimal(payoutAmountVnd);
-  if (!payout.isInteger() || payout.lte(0)) throw new Error("Payout VND must be a positive integer");
+  if (payout.decimalPlaces() > 2 || payout.lte(0)) throw new Error("Payout VND must be positive with at most two decimals");
   const active = buckets.filter((bucket) => new Decimal(bucket.availableAmountVnd).gt(0));
   const total = active.reduce((sum, bucket) => sum.plus(bucket.availableAmountVnd), new Decimal(0));
-  if (total.lt(payout)) throw new InsufficientPoolBalanceError(total.toFixed(0), payout.toFixed(0));
+  if (total.lt(payout)) throw new InsufficientPoolBalanceError(total.toFixed(2), payout.toFixed(2));
 
   let allocated = new Decimal(0);
   return active.map((bucket, index) => {
@@ -96,16 +101,16 @@ export function allocatePayoutProportionally(buckets: PoolBucketInput[], payoutA
     const ratio = before.div(total);
     const amount = index === active.length - 1
       ? payout.minus(allocated)
-      : payout.mul(ratio).toDecimalPlaces(0, Decimal.ROUND_DOWN);
-    if (amount.gt(before)) throw new InsufficientPoolBalanceError(total.toFixed(0), payout.toFixed(0));
+      : payout.mul(ratio).toDecimalPlaces(2, Decimal.ROUND_DOWN);
+    if (amount.gt(before)) throw new InsufficientPoolBalanceError(total.toFixed(2), payout.toFixed(2));
     allocated = allocated.plus(amount);
     const rate = bucket.fundingRateVndPerUsdt ? new Decimal(bucket.fundingRateVndPerUsdt) : null;
     return {
       ...bucket,
-      balanceBeforeVnd: before.toFixed(0),
+      balanceBeforeVnd: before.toFixed(2),
       allocationRatio: ratio.toFixed(12),
-      allocatedVnd: amount.toFixed(0),
-      balanceAfterVnd: before.minus(amount).toFixed(0),
+      allocatedVnd: amount.toFixed(2),
+      balanceAfterVnd: before.minus(amount).toFixed(2),
       allocatedCostUsdt: rate && rate.gt(0) ? amount.div(rate).toFixed(8) : null,
     };
   });
@@ -120,7 +125,7 @@ export function summarizeTopups(topups: TopupInput[]) {
   const totalVnd = topups.reduce((sum, item) => sum.plus(item.netVndReceived), new Decimal(0));
   return {
     totalUsdt: totalUsdt.toFixed(8),
-    totalVnd: totalVnd.toFixed(0),
+    totalVnd: totalVnd.toFixed(2),
     weightedAverageRate: totalVnd.div(totalUsdt).toDecimalPlaces(10, Decimal.ROUND_DOWN).toFixed(10),
   };
 }
@@ -128,6 +133,76 @@ export function summarizeTopups(topups: TopupInput[]) {
 export function poolThresholdSnapshot(balanceVnd: string, rateVndPerUsdt: string) {
   const equivalent = new Decimal(balanceVnd).div(rateVndPerUsdt);
   return { equivalentUsdt: equivalent.toFixed(8), isLow: equivalent.lt(RULES.lowPoolThresholdUsdt) };
+}
+
+export const PAYIN_INTERNAL_NETTING = Object.freeze({
+  sourceType: "PAYIN_INTERNAL_NETTING" as const,
+  fundingMethod: "INTERNAL_NETTING" as const,
+  externalUsdtSpent: "0.00000000",
+  costBasisMethod: "INTERNAL_NETTING" as const,
+  costBasisStatus: "NOT_APPLICABLE" as const,
+});
+
+export function calculatePayinPoolEntry(grossOrderAmountVnd:string, changeAmountVnd:string, status:OrderStatus="SUCCESS") {
+  const economics=calculatePayinEconomics(grossOrderAmountVnd,status);
+  const change=new Decimal(changeAmountVnd);
+  if(change.isNegative()||change.decimalPlaces()>2)throw new Error("Payin change amount must be non-negative with at most two decimals");
+  return {
+    ...economics,
+    companyPayinFeeRevenueVnd:economics.expectedFeeRevenueVnd,
+    upstreamPayinFeeVnd:economics.upstreamFeeAppliedVnd,
+    payinNetFeeContributionVnd:economics.netFeeContributionVnd,
+    poolInflowVnd:status==="SUCCESS"?change.toFixed(2):null,
+    ...PAYIN_INTERNAL_NETTING,
+  };
+}
+
+export type AccountEventType="PAYIN_INFLOW"|"PAYOUT_OUTFLOW"|"INTERNAL_TRANSFER_DEBIT"|"INTERNAL_TRANSFER_CREDIT"|"MANUAL_ADJUSTMENT";
+export interface AccountHistoryInput {
+  sourceRowNumber:number; businessOrderNumber:string; transactionType:string; changeAmountVnd:string;
+  grossOrderAmountVnd:string; feeVnd:string; direction:"增加"|"减少";
+  balanceBeforeVnd:string; balanceAfterVnd:string; sourceLocalTime:string;
+}
+export interface AccountHistoryMapped extends AccountHistoryInput {
+  eventType:AccountEventType; signedAmountVnd:string; payoutPrincipalVnd:string|null;
+  payoutFeeVnd:string|null; poolInflowVnd:string|null; poolOutflowVnd:string|null;
+  balanceValidationDifferenceVnd:string; balanceValidationStatus:"MATCH"|"MISMATCH";
+  continuityStatus?:"FIRST"|"MATCH"|"MISMATCH"; transferPairStatus:"PAIRED"|"UNMATCHED"|"NOT_APPLICABLE";
+  transferPairKey:string|null;
+}
+function mapAccountEventType(value:string):AccountEventType {
+  if(value==="收单")return "PAYIN_INFLOW";
+  if(value==="代付")return "PAYOUT_OUTFLOW";
+  if(value==="结算扣款")return "INTERNAL_TRANSFER_DEBIT";
+  if(value==="结算入账")return "INTERNAL_TRANSFER_CREDIT";
+  return "MANUAL_ADJUSTMENT";
+}
+export function mapAccountHistoryEntry(input:AccountHistoryInput,toleranceVnd=RULES.balanceRoundingToleranceVnd):AccountHistoryMapped {
+  const change=new Decimal(input.changeAmountVnd).abs();
+  const signed=input.direction==="增加"?change:change.neg();
+  const difference=new Decimal(input.balanceBeforeVnd).plus(signed).minus(input.balanceAfterVnd);
+  const eventType=mapAccountEventType(input.transactionType);
+  const isTransfer=eventType==="INTERNAL_TRANSFER_DEBIT"||eventType==="INTERNAL_TRANSFER_CREDIT";
+  return {...input,eventType,signedAmountVnd:signed.toFixed(2),
+    payoutPrincipalVnd:eventType==="PAYOUT_OUTFLOW"?new Decimal(input.grossOrderAmountVnd).toFixed(2):null,
+    payoutFeeVnd:eventType==="PAYOUT_OUTFLOW"?new Decimal(input.feeVnd).toFixed(2):null,
+    poolInflowVnd:eventType==="PAYIN_INFLOW"?change.toFixed(2):null,
+    poolOutflowVnd:eventType==="PAYOUT_OUTFLOW"?change.toFixed(2):null,
+    balanceValidationDifferenceVnd:difference.toFixed(2),
+    balanceValidationStatus:difference.abs().lte(toleranceVnd)?"MATCH":"MISMATCH",
+    transferPairStatus:isTransfer?"UNMATCHED":"NOT_APPLICABLE",
+    transferPairKey:isTransfer?`${input.businessOrderNumber}\u001f${change.toFixed(2)}`:null};
+}
+export function rebuildAccountHistory(entries:AccountHistoryMapped[],toleranceVnd=RULES.balanceRoundingToleranceVnd) {
+  const ordered=[...entries].sort((a,b)=>a.sourceLocalTime.localeCompare(b.sourceLocalTime)||b.sourceRowNumber-a.sourceRowNumber);
+  const transferGroups=new Map<string,AccountHistoryMapped[]>();
+  for(const entry of ordered)if(entry.transferPairKey)transferGroups.set(entry.transferPairKey,[...(transferGroups.get(entry.transferPairKey)??[]),entry]);
+  for(const group of transferGroups.values()){
+    const debits=group.filter(x=>x.eventType==="INTERNAL_TRANSFER_DEBIT");const credits=group.filter(x=>x.eventType==="INTERNAL_TRANSFER_CREDIT");
+    const paired=Math.min(debits.length,credits.length);debits.forEach((x,i)=>x.transferPairStatus=i<paired?"PAIRED":"UNMATCHED");credits.forEach((x,i)=>x.transferPairStatus=i<paired?"PAIRED":"UNMATCHED");
+  }
+  ordered.forEach((entry,index)=>{entry.continuityStatus=index===0?"FIRST":new Decimal(ordered[index-1].balanceAfterVnd).minus(entry.balanceBeforeVnd).abs().lte(toleranceVnd)?"MATCH":"MISMATCH";});
+  return ordered;
 }
 
 export function maskCardNumber(input: string) {
