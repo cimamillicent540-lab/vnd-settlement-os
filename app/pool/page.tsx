@@ -1,14 +1,19 @@
 import type {Metadata} from "next";
-import {DatabaseZap,Info,Scale,WalletCards} from "lucide-react";
+import {Info,Landmark,LockKeyhole,Percent,WalletCards} from "lucide-react";
 import {Badge} from "@/components/ui/badge";
 import {Card,CardHeader} from "@/components/ui/card";
 import {KpiCard,PageHeading,Pagination} from "@/components/page-parts";
 import {getPoolSnapshot} from "@/lib/server-data";
 import {formatVnd} from "@/lib/utils";
 export const metadata:Metadata={title:"VND 资金池"};
-export default async function PoolPage(){const {ledger,opening,recon}=await getPoolSnapshot();const latest=ledger[0];return <>
- <PageHeading title="VND 资金池" subtitle="Account History 正序重建 · Shadow Mode 真实数据快照"/>
- <div className="kpi-grid"><KpiCard label="账本最新余额" value={formatVnd(latest?.balance_after_vnd??0)} note={<span>含已确认补U流水</span>} icon={WalletCards}/><KpiCard label="正式期初余额" value={formatVnd(opening?.opening_balance_vnd??0)} note={<span>{opening?.effective_at??"—"}</span>} icon={Scale}/><KpiCard label="账户历史对账差异" value={formatVnd(recon?.difference_vnd??0)} note={<Badge variant={recon?.status==="BALANCED"?"green":"red"}>{recon?.status??"未运行"}</Badge>} icon={DatabaseZap}/><KpiCard label="来源倍率" value={`${opening?.multiplier??"—"}×`} note={<span>业务确认总余额倍率</span>} icon={Info}/></div>
- <div className="alert alert-info" style={{marginBottom:16}}><Info size={15}/><div><strong>Payin 内部净额规则</strong>资金池流入来自 Account History 的变动金额；0.8% 收入与 2,500 VND 上游费单独记录，逐笔 external_usdt_spent 为 0，成本状态为 NOT_APPLICABLE。</div></div>
- <Card><CardHeader><div><h2 className="panel-title">最近资金池流水</h2><div className="panel-subtitle">交易时间正序重建后，以最新事件倒序展示 · VND 保留两位小数</div></div><Badge variant="blue">真实数据</Badge></CardHeader><div className="table-wrap"><table><thead><tr><th>事件时间</th><th>事件类型</th><th>来源</th><th style={{textAlign:"right"}}>变动金额</th><th style={{textAlign:"right"}}>变动后余额</th><th>可信度</th></tr></thead><tbody>{ledger.map((row,index)=><tr key={`${row.event_time}-${index}`}><td>{row.event_time??`${row.event_date} · DATE_ONLY`}</td><td><Badge variant={String(row.signed_amount_vnd).startsWith("-")?"amber":"green"}>{row.event_type}</Badge></td><td>{row.source_type??"—"}</td><td className="money">{formatVnd(row.signed_amount_vnd)}</td><td className="money">{formatVnd(row.balance_after_vnd)}</td><td><Badge variant="green">{row.data_confidence}</Badge></td></tr>)}</tbody></table></div><Pagination total={ledger.length}/></Card>
+export default async function PoolPage(){const {ledger,opening}=await getPoolSnapshot();const latest=ledger[0];return <>
+ <PageHeading title="VND 资金池" subtitle="Gross 上游账面层与 50% Settleable 可结算层 · Shadow Mode"/>
+ <div className="kpi-grid">
+  <KpiCard label="上游账面余额" value={formatVnd(latest?.gross_balance_after_vnd??0)} note={<span>Gross account balance</span>} icon={Landmark}/>
+  <KpiCard label="保证金锁定金额" value={formatVnd(latest?.reserve_balance_after_vnd??0)} note={<span>上游保留 50%</span>} icon={LockKeyhole} color="#dc8b16"/>
+  <KpiCard label="实际可结算余额" value={formatVnd(latest?.settleable_balance_after_vnd??0)} note={<span>Payout 与低池预警唯一余额口径</span>} icon={WalletCards} color="#0f9f78"/>
+  <KpiCard label="保证金比例" value={`${Number(opening?.reserve_ratio??0)*100}%`} note={<span>Settleable ratio 同为 50%</span>} icon={Percent} color="#6f4bb7"/>
+ </div>
+ <div className="alert alert-warning" style={{marginBottom:16}}><Info size={15}/><div><strong>支付能力边界</strong>上游账面余额不能全部用于 Payout。所有可执行性检查和低余额 USDT 折算必须读取 settleable_balance_vnd。</div></div>
+ <Card><CardHeader><div><h2 className="panel-title">Gross / Settleable 双层流水</h2><div className="panel-subtitle">原始变动金额完整保存；可结算变化按 50% 派生</div></div><Badge variant="green">SETTLEABLE_RATIO_V1</Badge></CardHeader><div className="table-wrap"><table><thead><tr><th>事件时间</th><th>事件类型</th><th style={{textAlign:"right"}}>Gross 变动</th><th style={{textAlign:"right"}}>Settleable 变动</th><th style={{textAlign:"right"}}>Gross 余额</th><th style={{textAlign:"right"}}>Settleable 余额</th></tr></thead><tbody>{ledger.map((row,index)=><tr key={`${row.event_time}-${row.event_type}-${index}`}><td>{row.event_time??`${row.event_date} · DATE_ONLY`}</td><td><Badge variant={String(row.gross_signed_amount_vnd).startsWith("-")?"amber":"green"}>{row.event_type}</Badge></td><td className="money">{formatVnd(row.gross_signed_amount_vnd??0)}</td><td className="money">{formatVnd(row.settleable_signed_amount_vnd??0)}</td><td className="money">{formatVnd(row.gross_balance_after_vnd??0)}</td><td className="money">{formatVnd(row.settleable_balance_after_vnd??0)}</td></tr>)}</tbody></table></div><Pagination total={ledger.length}/></Card>
  </>}

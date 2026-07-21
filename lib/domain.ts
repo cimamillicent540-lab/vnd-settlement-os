@@ -13,13 +13,21 @@ export const RULES = Object.freeze({
   timezone: "UTC",
   sourceTimezone: "UTC+8",
   balanceRoundingToleranceVnd: "1",
-  openingBalanceVnd: "6796457582.28",
+  reserveRatio: "0.50",
+  settleableRatio: "0.50",
+  grossOpeningBalanceVnd: "3398228791.14",
+  reserveOpeningBalanceVnd: "1699114395.57",
+  settleableOpeningBalanceVnd: "1699114395.57",
   openingEffectiveAt: "2026-07-17T00:00:00Z",
-  accountBalanceMultiplier: "2",
 });
 
 export type OrderStatus = "SUCCESS" | "FAILED" | "TIMEOUT" | "CANCELLED" | "PENDING";
 export type CostBasisStatus = "KNOWN" | "MISSING" | "ESTIMATED" | "NOT_APPLICABLE";
+
+export const OPENING_BALANCE_CORRECTION=Object.freeze({
+  superseded:{settleableOpeningBalanceVnd:"6796457582.28",status:"SUPERSEDED" as const,modelVersion:"LEGACY_MULTIPLIER"},
+  approved:{grossOpeningBalanceVnd:RULES.grossOpeningBalanceVnd,reserveOpeningBalanceVnd:RULES.reserveOpeningBalanceVnd,settleableOpeningBalanceVnd:RULES.settleableOpeningBalanceVnd,status:"APPROVED" as const,modelVersion:"SETTLEABLE_RATIO_V1"},
+});
 
 export function calculatePayinEconomics(amountVnd: string, status: OrderStatus = "SUCCESS") {
   const amount = new Decimal(amountVnd);
@@ -69,16 +77,17 @@ export function aqDiagnostics(ap: string, aq: string) {
 export interface PoolBucketInput {
   id: string;
   sourceType: "OPENING" | "PAYIN" | "PAYIN_INTERNAL_NETTING" | "TOPUP" | "ADJUSTMENT";
-  availableAmountVnd: string;
+  settleableAvailableAmountVnd: string;
+  grossAvailableAmountVnd?: string;
   fundingRateVndPerUsdt?: string | null;
   costBasisStatus: CostBasisStatus;
 }
 
 export interface PoolAllocation extends PoolBucketInput {
-  balanceBeforeVnd: string;
+  settleableBalanceBeforeVnd: string;
   allocationRatio: string;
   allocatedVnd: string;
-  balanceAfterVnd: string;
+  settleableBalanceAfterVnd: string;
   allocatedCostUsdt: string | null;
 }
 
@@ -91,13 +100,13 @@ export class InsufficientPoolBalanceError extends Error {
 export function allocatePayoutProportionally(buckets: PoolBucketInput[], payoutAmountVnd: string): PoolAllocation[] {
   const payout = new Decimal(payoutAmountVnd);
   if (payout.decimalPlaces() > 2 || payout.lte(0)) throw new Error("Payout VND must be positive with at most two decimals");
-  const active = buckets.filter((bucket) => new Decimal(bucket.availableAmountVnd).gt(0));
-  const total = active.reduce((sum, bucket) => sum.plus(bucket.availableAmountVnd), new Decimal(0));
+  const active = buckets.filter((bucket) => new Decimal(bucket.settleableAvailableAmountVnd).gt(0));
+  const total = active.reduce((sum, bucket) => sum.plus(bucket.settleableAvailableAmountVnd), new Decimal(0));
   if (total.lt(payout)) throw new InsufficientPoolBalanceError(total.toFixed(2), payout.toFixed(2));
 
   let allocated = new Decimal(0);
   return active.map((bucket, index) => {
-    const before = new Decimal(bucket.availableAmountVnd);
+    const before = new Decimal(bucket.settleableAvailableAmountVnd);
     const ratio = before.div(total);
     const amount = index === active.length - 1
       ? payout.minus(allocated)
@@ -107,10 +116,10 @@ export function allocatePayoutProportionally(buckets: PoolBucketInput[], payoutA
     const rate = bucket.fundingRateVndPerUsdt ? new Decimal(bucket.fundingRateVndPerUsdt) : null;
     return {
       ...bucket,
-      balanceBeforeVnd: before.toFixed(2),
+      settleableBalanceBeforeVnd: before.toFixed(2),
       allocationRatio: ratio.toFixed(12),
       allocatedVnd: amount.toFixed(2),
-      balanceAfterVnd: before.minus(amount).toFixed(2),
+      settleableBalanceAfterVnd: before.minus(amount).toFixed(2),
       allocatedCostUsdt: rate && rate.gt(0) ? amount.div(rate).toFixed(8) : null,
     };
   });
@@ -130,9 +139,35 @@ export function summarizeTopups(topups: TopupInput[]) {
   };
 }
 
-export function poolThresholdSnapshot(balanceVnd: string, rateVndPerUsdt: string) {
-  const equivalent = new Decimal(balanceVnd).div(rateVndPerUsdt);
-  return { equivalentUsdt: equivalent.toFixed(8), isLow: equivalent.lt(RULES.lowPoolThresholdUsdt) };
+export function deriveBalanceLayers(grossBalanceVnd:string){
+  const gross=new Decimal(grossBalanceVnd);
+  if(gross.isNegative()||gross.decimalPlaces()>2)throw new Error("Gross VND balance must be non-negative with at most two decimals");
+  return {
+    grossBalanceVnd:gross.toFixed(2),
+    reserveRatio:RULES.reserveRatio,
+    reserveAmountVnd:gross.mul(RULES.reserveRatio).toFixed(2),
+    settleableRatio:RULES.settleableRatio,
+    settleableBalanceVnd:gross.mul(RULES.settleableRatio).toFixed(2),
+  };
+}
+
+export function deriveSettleableChange(grossChangeVnd:string){
+  return new Decimal(grossChangeVnd).mul(RULES.settleableRatio).toFixed(4);
+}
+
+export function canExecutePayout(settleableBalanceVnd:string,payoutRequiredVnd:string){
+  return new Decimal(settleableBalanceVnd).gte(payoutRequiredVnd);
+}
+
+export function poolThresholdSnapshot(settleableBalanceVnd: string, rateVndPerUsdt: string) {
+  const equivalent = new Decimal(settleableBalanceVnd).div(rateVndPerUsdt);
+  return { balanceBasis:"SETTLEABLE" as const,equivalentUsdt: equivalent.toFixed(8), isLow: equivalent.lt(RULES.lowPoolThresholdUsdt) };
+}
+
+export function resolveTopupLedgerTreatment(accountHistoryMatched:boolean){
+  return accountHistoryMatched
+    ? {addGrossInflow:false,addSettleableInflow:false,treatment:"LINK_COST_ONLY" as const}
+    : {addGrossInflow:true,addSettleableInflow:true,treatment:"ADD_GROSS_AND_SETTLEABLE_INFLOW" as const};
 }
 
 export const PAYIN_INTERNAL_NETTING = Object.freeze({
@@ -153,6 +188,7 @@ export function calculatePayinPoolEntry(grossOrderAmountVnd:string, changeAmount
     upstreamPayinFeeVnd:economics.upstreamFeeAppliedVnd,
     payinNetFeeContributionVnd:economics.netFeeContributionVnd,
     poolInflowVnd:status==="SUCCESS"?change.toFixed(2):null,
+    settleablePoolInflowVnd:status==="SUCCESS"?deriveSettleableChange(change.toFixed(2)):null,
     ...PAYIN_INTERNAL_NETTING,
   };
 }
@@ -169,6 +205,10 @@ export interface AccountHistoryMapped extends AccountHistoryInput {
   balanceValidationDifferenceVnd:string; balanceValidationStatus:"MATCH"|"MISMATCH";
   continuityStatus?:"FIRST"|"MATCH"|"MISMATCH"; transferPairStatus:"PAIRED"|"UNMATCHED"|"NOT_APPLICABLE";
   transferPairKey:string|null;
+  grossChangeVnd:string; grossSignedChangeVnd:string; grossBalanceBeforeVnd:string; grossBalanceAfterVnd:string;
+  reserveRatio:string; reserveAmountVnd:string; settleableRatio:string;
+  settleableChangeVnd:string; settleableSignedChangeVnd:string;
+  settleableBalanceBeforeVnd:string; settleableBalanceAfterVnd:string;
 }
 function mapAccountEventType(value:string):AccountEventType {
   if(value==="收单")return "PAYIN_INFLOW";
@@ -183,6 +223,8 @@ export function mapAccountHistoryEntry(input:AccountHistoryInput,toleranceVnd=RU
   const difference=new Decimal(input.balanceBeforeVnd).plus(signed).minus(input.balanceAfterVnd);
   const eventType=mapAccountEventType(input.transactionType);
   const isTransfer=eventType==="INTERNAL_TRANSFER_DEBIT"||eventType==="INTERNAL_TRANSFER_CREDIT";
+  const beforeLayers=deriveBalanceLayers(input.balanceBeforeVnd);
+  const afterLayers=deriveBalanceLayers(input.balanceAfterVnd);
   return {...input,eventType,signedAmountVnd:signed.toFixed(2),
     payoutPrincipalVnd:eventType==="PAYOUT_OUTFLOW"?new Decimal(input.grossOrderAmountVnd).toFixed(2):null,
     payoutFeeVnd:eventType==="PAYOUT_OUTFLOW"?new Decimal(input.feeVnd).toFixed(2):null,
@@ -191,7 +233,14 @@ export function mapAccountHistoryEntry(input:AccountHistoryInput,toleranceVnd=RU
     balanceValidationDifferenceVnd:difference.toFixed(2),
     balanceValidationStatus:difference.abs().lte(toleranceVnd)?"MATCH":"MISMATCH",
     transferPairStatus:isTransfer?"UNMATCHED":"NOT_APPLICABLE",
-    transferPairKey:isTransfer?`${input.businessOrderNumber}\u001f${change.toFixed(2)}`:null};
+    transferPairKey:isTransfer?`${input.businessOrderNumber}\u001f${change.toFixed(2)}`:null,
+    grossChangeVnd:change.toFixed(2),grossSignedChangeVnd:signed.toFixed(2),
+    grossBalanceBeforeVnd:beforeLayers.grossBalanceVnd,grossBalanceAfterVnd:afterLayers.grossBalanceVnd,
+    reserveRatio:RULES.reserveRatio,reserveAmountVnd:afterLayers.reserveAmountVnd,
+    settleableRatio:RULES.settleableRatio,settleableChangeVnd:deriveSettleableChange(change.toFixed(2)),
+    settleableSignedChangeVnd:deriveSettleableChange(signed.toFixed(2)),
+    settleableBalanceBeforeVnd:beforeLayers.settleableBalanceVnd,
+    settleableBalanceAfterVnd:afterLayers.settleableBalanceVnd};
 }
 export function rebuildAccountHistory(entries:AccountHistoryMapped[],toleranceVnd=RULES.balanceRoundingToleranceVnd) {
   const ordered=[...entries].sort((a,b)=>a.sourceLocalTime.localeCompare(b.sourceLocalTime)||b.sourceRowNumber-a.sourceRowNumber);
