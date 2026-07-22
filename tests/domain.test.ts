@@ -5,7 +5,7 @@ import {
   sanitizeImportRow, shouldChangePool, summarizeTopups, validateAp, validateImportedFee,
   calculatePayinPoolEntry, mapAccountHistoryEntry, rebuildAccountHistory,
   canExecutePayout, deriveBalanceLayers, deriveSettleableChange,
-  OPENING_BALANCE_CORRECTION, resolveTopupLedgerTreatment,
+  OPENING_BALANCE_CORRECTION, resolveTopupLedgerTreatment, assessDataCompleteness,
   type PoolBucketInput,
 } from "../lib/domain";
 
@@ -53,6 +53,7 @@ describe("settleable balance correction",()=>{
   it("does not add a matched topup twice",()=>expect(resolveTopupLedgerTreatment(true)).toEqual({addGrossInflow:false,addSettleableInflow:false,treatment:"LINK_COST_ONLY"}));
   it("marks the incorrect opening as superseded",()=>expect(OPENING_BALANCE_CORRECTION.superseded.status).toBe("SUPERSEDED"));
   it("approves 1699114395.57 as the new settleable opening",()=>expect(OPENING_BALANCE_CORRECTION.approved.settleableOpeningBalanceVnd).toBe("1699114395.57"));
+  it("marks later Topup and Payout sources as partial after the Account History cutoff",()=>expect(assessDataCompleteness("2026-07-18 23:59:28","2026-07-20","2026-07-20T15:59:55Z")).toEqual({status:"PARTIAL_AFTER_ACCOUNT_HISTORY_CUTOFF",isPartial:true}));
 });
 
 describe("quality and privacy controls",()=>{

@@ -164,6 +164,15 @@ export function poolThresholdSnapshot(settleableBalanceVnd: string, rateVndPerUs
   return { balanceBasis:"SETTLEABLE" as const,equivalentUsdt: equivalent.toFixed(8), isLow: equivalent.lt(RULES.lowPoolThresholdUsdt) };
 }
 
+export function assessDataCompleteness(accountHistoryCutoffLocal:string|null,topupCutoffDate:string|null,payoutCutoffUtc:string|null){
+  if(!accountHistoryCutoffLocal)return {status:"INCOMPLETE" as const,isPartial:true};
+  const accountCutoffUtc=Date.parse(`${accountHistoryCutoffLocal.replace(" ","T")}+08:00`);
+  const topupCutoffUtc=topupCutoffDate?Date.parse(`${topupCutoffDate}T23:59:59+08:00`):Number.NEGATIVE_INFINITY;
+  const payoutCutoff= payoutCutoffUtc?Date.parse(payoutCutoffUtc):Number.NEGATIVE_INFINITY;
+  const isPartial=topupCutoffUtc>accountCutoffUtc||payoutCutoff>accountCutoffUtc;
+  return {status:isPartial?"PARTIAL_AFTER_ACCOUNT_HISTORY_CUTOFF" as const:"COMPLETE_TO_ACCOUNT_HISTORY_CUTOFF" as const,isPartial};
+}
+
 export function resolveTopupLedgerTreatment(accountHistoryMatched:boolean){
   return accountHistoryMatched
     ? {addGrossInflow:false,addSettleableInflow:false,treatment:"LINK_COST_ONLY" as const}
