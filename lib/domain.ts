@@ -284,3 +284,105 @@ export function fingerprintText(text: string) {
   for (let i = 0; i < text.length; i++) hash = Math.imul(hash ^ text.charCodeAt(i), 16777619);
   return (hash >>> 0).toString(16).padStart(8, "0");
 }
+
+export type ShadowFundingSource="OPENING"|"PAYIN_INTERNAL_NETTING"|"TOPUP"|"ADJUSTMENT";
+export type CostMethod="ACTUAL_TOPUP"|"INTERNAL_NETTING_SHADOW"|"OPENING_SHADOW"|"MANUAL_APPROVED_RATE"|"MISSING_RATE";
+export type DataCompletenessStatus="COMPLETE"|"NO_ACCOUNT_HISTORY"|"MISSING_RECEIVED_USDT"|"MISSING_RATE"|"PARTIAL_AFTER_ACCOUNT_HISTORY_CUTOFF"|"DATE_ONLY_RATE"|"MULTIPLE_ISSUES";
+export type ProfitVerificationStatus="VERIFIED"|"PARTIAL"|"ESTIMATED"|"NOT_CALCULABLE";
+
+export interface ShadowFundingBucket {
+  id:string;sourceType:ShadowFundingSource;grossAvailableVnd:string;settleableAvailableVnd:string;
+  settleableRatio:string;actualRateVndPerUsdt?:string|null;economicRateVndPerUsdt?:string|null;
+  rateTimePrecision?:"EXACT"|"DATE_ONLY"|null;
+}
+export interface ShadowFundingAllocation extends ShadowFundingBucket {
+  allocationRatio:string;allocatedGrossOutflowVnd:string;allocatedSettleableImpactVnd:string;
+  grossBalanceAfterVnd:string;settleableBalanceAfterVnd:string;
+}
+
+export function allocateGrossOutflowBySettleable(buckets:ShadowFundingBucket[],grossOutflowVnd:string):ShadowFundingAllocation[]{
+  const grossOutflow=new Decimal(grossOutflowVnd);
+  if(grossOutflow.lte(0)||grossOutflow.decimalPlaces()>2)throw new Error("Gross outflow must be positive with at most two decimals");
+  const active=buckets.filter(bucket=>new Decimal(bucket.settleableAvailableVnd).gt(0));
+  const totalSettleable=active.reduce((sum,bucket)=>sum.plus(bucket.settleableAvailableVnd),new Decimal(0));
+  if(totalSettleable.lte(0))throw new InsufficientPoolBalanceError("0.00",grossOutflow.toFixed(2));
+  let allocatedGross=new Decimal(0);
+  return active.map((bucket,index)=>{
+    const ratio=new Decimal(bucket.settleableAvailableVnd).div(totalSettleable);
+    const gross=index===active.length-1?grossOutflow.minus(allocatedGross):grossOutflow.mul(ratio).toDecimalPlaces(2,Decimal.ROUND_DOWN);
+    const settleableImpact=gross.mul(bucket.settleableRatio).toDecimalPlaces(4,Decimal.ROUND_HALF_UP);
+    const grossBefore=new Decimal(bucket.grossAvailableVnd);
+    const settleableBefore=new Decimal(bucket.settleableAvailableVnd);
+    if(gross.gt(grossBefore)||settleableImpact.gt(settleableBefore))throw new InsufficientPoolBalanceError(totalSettleable.toFixed(4),settleableImpact.toFixed(4));
+    allocatedGross=allocatedGross.plus(gross);
+    return {...bucket,allocationRatio:ratio.toFixed(12),allocatedGrossOutflowVnd:gross.toFixed(2),allocatedSettleableImpactVnd:settleableImpact.toFixed(4),grossBalanceAfterVnd:grossBefore.minus(gross).toFixed(2),settleableBalanceAfterVnd:settleableBefore.minus(settleableImpact).toFixed(4)};
+  });
+}
+
+export function calculateAllocationCost(allocation:Pick<ShadowFundingAllocation,"sourceType"|"allocatedGrossOutflowVnd"|"actualRateVndPerUsdt"|"economicRateVndPerUsdt">){
+  const gross=new Decimal(allocation.allocatedGrossOutflowVnd);
+  const actual=allocation.actualRateVndPerUsdt?new Decimal(allocation.actualRateVndPerUsdt):null;
+  const economic=allocation.economicRateVndPerUsdt?new Decimal(allocation.economicRateVndPerUsdt):null;
+  const external=allocation.sourceType==="TOPUP"&&actual?.gt(0)?gross.div(actual):new Decimal(0);
+  const economicCost=economic?.gt(0)?gross.div(economic):null;
+  const method:CostMethod=allocation.sourceType==="TOPUP"&&actual?.gt(0)?"ACTUAL_TOPUP":!economic?"MISSING_RATE":allocation.sourceType==="PAYIN_INTERNAL_NETTING"?"INTERNAL_NETTING_SHADOW":allocation.sourceType==="OPENING"?"OPENING_SHADOW":"MANUAL_APPROVED_RATE";
+  return {costMethod:method,externalCashCostUsdt:external.toFixed(8),economicCostUsdt:economicCost?.toFixed(8)??null,internalNettingAdvantageUsdt:economicCost?economicCost.minus(external).toFixed(8):null};
+}
+
+export function requireVndPerUsdt(direction:string,rate:string){
+  if(direction!=="VND_PER_USDT")throw new Error("Rate direction must be VND_PER_USDT");
+  const value=new Decimal(rate);if(value.lte(0))throw new Error("Rate must be positive");return value.toFixed(12);
+}
+
+export function deriveArAsFromFiatRates(beforeUsdtPerVnd:string,afterUsdtPerVnd:string){
+  const before=new Decimal(beforeUsdtPerVnd);const after=new Decimal(afterUsdtPerVnd);
+  if(before.lte(0)||after.lte(0))throw new Error("Fiat DCC rates must be positive");
+  const ar=new Decimal(1).div(before);const as=new Decimal(1).div(after);
+  return {arRateVndPerUsdt:ar.toFixed(12),asRateVndPerUsdt:as.toFixed(12),apCalculated:as.div(ar).minus(1).toFixed(12)};
+}
+
+export interface ShadowQuoteInput {receivedUsdt:string;economicCostPerVnd:string;companyBorneFeeUsdt?:string;fixedPayoutFeeVnd?:string;payoutFeeRate?:string;targetMargin:string;currentAsRate?:string;}
+export function calculateShadowQuote(input:ShadowQuoteInput){
+  const received=new Decimal(input.receivedUsdt);const costPerVnd=new Decimal(input.economicCostPerVnd);const margin=new Decimal(input.targetMargin);const companyFee=new Decimal(input.companyBorneFeeUsdt??0);
+  if(received.lte(0)||costPerVnd.lte(0)||margin.lt(0)||margin.gte(1))throw new Error("Invalid shadow quote input");
+  const maxGross=received.mul(new Decimal(1).minus(margin)).minus(companyFee).div(costPerVnd);
+  const fixedFee=new Decimal(input.fixedPayoutFeeVnd??0);const feeRate=input.payoutFeeRate?new Decimal(input.payoutFeeRate):null;
+  const principal=feeRate?maxGross.div(new Decimal(1).plus(feeRate)):maxGross.minus(fixedFee);
+  const recommended=principal.div(received);
+  const currentPrincipal=input.currentAsRate?received.mul(input.currentAsRate):null;
+  const currentGross=currentPrincipal?(feeRate?currentPrincipal.mul(new Decimal(1).plus(feeRate)):currentPrincipal.plus(fixedFee)):null;
+  const currentProfit=currentGross?received.minus(companyFee).minus(currentGross.mul(costPerVnd)):null;
+  return {maxGrossOutflowVnd:maxGross.toFixed(2),maxMerchantPrincipalVnd:principal.toFixed(2),recommendedAsRateVndPerUsdt:recommended.toFixed(8),currentEconomicProfitUsdt:currentProfit?.toFixed(8)??null,currentEconomicMargin:currentProfit?.div(received).toFixed(8)??null};
+}
+
+export interface MatchablePayout {id:string;orderNumber:string;channelOrderNumber?:string|null;merchantOrderNumber?:string|null;currency:string;payoutAmountVnd:string;completedAt:string;manualMatchAccountId?:string|null;}
+export interface MatchableAccountEntry {id:string;businessOrderNumber:string;currency:string;principalVnd:string;transactionTime:string;}
+export function matchPayoutToAccountHistory(payout:MatchablePayout,entries:MatchableAccountEntry[],maxTimeDifferenceSeconds=300){
+  if(payout.manualMatchAccountId)return {accountHistoryEntryId:payout.manualMatchAccountId,matchMethod:"MANUAL_CONFIRMED" as const,matchConfidence:"HIGH" as const,conflict:false};
+  const checks:[string,(entry:MatchableAccountEntry)=>boolean][]=[
+    ["BUSINESS_ORDER_NUMBER",entry=>entry.businessOrderNumber===payout.orderNumber],
+    ["CHANNEL_ORDER_NUMBER",entry=>Boolean(payout.channelOrderNumber)&&entry.businessOrderNumber===payout.channelOrderNumber],
+    ["MERCHANT_ORDER_NUMBER",entry=>Boolean(payout.merchantOrderNumber)&&entry.businessOrderNumber===payout.merchantOrderNumber],
+    ["TIME_CURRENCY_AMOUNT",entry=>entry.currency===payout.currency&&new Decimal(entry.principalVnd).eq(payout.payoutAmountVnd)&&Math.abs(Date.parse(entry.transactionTime)-Date.parse(payout.completedAt))/1000<=maxTimeDifferenceSeconds],
+  ];
+  for(const [method,predicate] of checks){const matches=entries.filter(predicate);if(matches.length===1)return {accountHistoryEntryId:matches[0].id,matchMethod:method,matchConfidence:method==="TIME_CURRENCY_AMOUNT"?"MEDIUM" as const:"HIGH" as const,conflict:false};if(matches.length>1)return {accountHistoryEntryId:null,matchMethod:method,matchConfidence:"LOW" as const,conflict:true};}
+  return {accountHistoryEntryId:null,matchMethod:"NO_MATCH" as const,matchConfidence:"NONE" as const,conflict:false};
+}
+
+export function classifyProfitVerification(input:{hasAccountHistory:boolean;hasReceivedUsdt:boolean;hasEconomicRate:boolean;afterAccountHistoryCutoff:boolean;rateTimePrecision?:"EXACT"|"DATE_ONLY";hasCompleteNetSettlement:boolean}){
+  const issues:DataCompletenessStatus[]=[];
+  if(!input.hasAccountHistory)issues.push("NO_ACCOUNT_HISTORY");if(!input.hasReceivedUsdt)issues.push("MISSING_RECEIVED_USDT");if(!input.hasEconomicRate)issues.push("MISSING_RATE");if(input.afterAccountHistoryCutoff)issues.push("PARTIAL_AFTER_ACCOUNT_HISTORY_CUTOFF");if(input.rateTimePrecision==="DATE_ONLY")issues.push("DATE_ONLY_RATE");
+  const completeness:DataCompletenessStatus=issues.length>1?"MULTIPLE_ISSUES":issues[0]??"COMPLETE";
+  const profitVerificationStatus:ProfitVerificationStatus=!input.hasReceivedUsdt||!input.hasEconomicRate?"NOT_CALCULABLE":!input.hasAccountHistory?"ESTIMATED":!input.hasCompleteNetSettlement||input.afterAccountHistoryCutoff||input.rateTimePrecision==="DATE_ONLY"?"PARTIAL":"VERIFIED";
+  return {profitVerificationStatus,dataCompletenessStatus:completeness,issues,realizedProfitStatus:input.hasCompleteNetSettlement&&profitVerificationStatus==="VERIFIED"?"VERIFIED" as const:"NOT_FULLY_VERIFIED" as const};
+}
+
+export function payoutFeeDistribution(fees:{principalVnd:string;feeVnd:string}[]){
+  const rates=fees.filter(row=>new Decimal(row.principalVnd).gt(0)).map(row=>new Decimal(row.feeVnd).div(row.principalVnd)).sort((a,b)=>a.comparedTo(b));
+  if(!rates.length)return {median:null,p90:null,outlierCount:0};
+  const quantile=(p:number)=>rates[Math.ceil((rates.length-1)*p)];const median=quantile(.5);const p90=quantile(.9);
+  return {median:median.toFixed(8),p90:p90.toFixed(8),outlierCount:rates.filter(rate=>rate.gt(p90)).length};
+}
+
+export const INTERNAL_NETTING_ADVANTAGE_LABEL="内部对冲优势（Replacement Cost Avoided）" as const;
+export function backtestPeriod(completedAt:string,accountHistoryCutoff="2026-07-18T15:59:28Z"){return Date.parse(completedAt)<=Date.parse(accountHistoryCutoff)?"VERIFIED_WINDOW" as const:"PARTIAL_AFTER_ACCOUNT_HISTORY_CUTOFF" as const;}

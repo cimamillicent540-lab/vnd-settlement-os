@@ -1,7 +1,7 @@
 "use client";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
-import { Bell, ChevronDown, CircleHelp, Database, FileInput, Gauge, PanelLeft, Scale, SearchCheck, ShieldCheck } from "lucide-react";
+import { Bell, BriefcaseBusiness, Calculator, ChevronDown, CircleHelp, Database, FileInput, Gauge, PanelLeft, Scale, SearchCheck, ShieldCheck } from "lucide-react";
 import { cn } from "@/lib/utils";
 
 const nav = [
@@ -10,8 +10,10 @@ const nav = [
   { href:"/topups", label:"补U批次", icon:Database },
   { href:"/data-quality", label:"数据质量", icon:SearchCheck },
   { href:"/reconciliation", label:"真实数据对账", icon:Scale },
+  { href:"/shadow-pricing", label:"影子报价", icon:Calculator },
+  { href:"/portfolio", label:"组合回测", icon:BriefcaseBusiness },
 ];
-const titles:Record<string,string> = { "/pool":"VND 资金池", "/imports":"数据导入中心", "/topups":"补U批次", "/data-quality":"数据质量与审计", "/reconciliation":"真实数据对账" };
+const titles:Record<string,string> = { "/pool":"VND 资金池", "/imports":"数据导入中心", "/topups":"补U批次", "/data-quality":"数据质量与审计", "/reconciliation":"真实数据对账", "/shadow-pricing":"影子报价", "/portfolio":"组合回测" };
 
 export function AppShell({ children }:{ children:React.ReactNode }) {
   const pathname = usePathname();

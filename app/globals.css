@@ -132,6 +132,11 @@ tbody tr:last-child td { border-bottom:0; }
 .metric-label { color:#7a8495; font-size:10px; }
 .metric-value { color:#29364a; font-size:11px; font-weight:680; }
 
+.pricing-form-grid { display:grid; grid-template-columns:repeat(2,minmax(0,1fr)); gap:13px; }
+.pricing-form-grid label { color:#667085; font-size:10px; font-weight:620; }
+.pricing-form-grid input,.pricing-form-grid select { width:100%; height:36px; margin-top:6px; border:1px solid #dfe4eb; border-radius:6px; background:#fff; padding:0 10px; color:#344054; outline:none; }
+.pricing-form-grid input:focus,.pricing-form-grid select:focus { border-color:#8aacfa; box-shadow:0 0 0 3px #edf3ff; }
+
 .quality-grid { display:grid; grid-template-columns:repeat(3,1fr); gap:13px; margin-bottom:16px; }
 .quality-card { padding:16px; border:1px solid #e3e7ee; background:white; border-radius:8px; display:flex; gap:12px; }
 .quality-score { width:38px; height:38px; flex:0 0 38px; border-radius:8px; display:grid; place-items:center; background:#f1f5ff; color:#245cc0; font-weight:750; }
@@ -169,4 +174,4 @@ tbody tr:last-child td { border-bottom:0; }
 @keyframes shimmer { 0%{background-position:100% 0}100%{background-position:0 0} }
 
 @media (max-width:1100px) { .kpi-grid{grid-template-columns:repeat(2,1fr)} .grid-2{grid-template-columns:1fr} .quality-grid{grid-template-columns:1fr 1fr} }
-@media (max-width:760px) { .app-shell{grid-template-columns:1fr}.sidebar{height:auto;position:static}.brand{height:58px}.sidebar nav,.sidebar-footer,.nav-section-label{display:none}.main-area{min-width:0}.topbar{height:58px;padding:0 16px}.content{padding:20px 15px 40px}.page-heading{flex-direction:column}.kpi-grid{grid-template-columns:1fr}.quality-grid,.bucket-list{grid-template-columns:1fr}.user-name,.user-role{display:none}.grid-2{grid-template-columns:1fr}.toolbar-spacer{display:none}.search{flex:1 1 100%;min-width:0}.top-actions .icon-button:first-child{display:none} }
+@media (max-width:760px) { .app-shell{grid-template-columns:1fr}.sidebar{height:auto;position:static}.brand{height:58px}.sidebar nav,.sidebar-footer,.nav-section-label{display:none}.main-area{min-width:0}.topbar{height:58px;padding:0 16px}.content{padding:20px 15px 40px}.page-heading{flex-direction:column}.kpi-grid{grid-template-columns:1fr}.quality-grid,.bucket-list,.pricing-form-grid{grid-template-columns:1fr}.user-name,.user-role{display:none}.grid-2{grid-template-columns:1fr}.toolbar-spacer{display:none}.search{flex:1 1 100%;min-width:0}.top-actions .icon-button:first-child{display:none} }
