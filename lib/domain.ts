@@ -379,9 +379,9 @@ export function classifyProfitVerification(input:{hasAccountHistory:boolean;hasR
 
 export function payoutFeeDistribution(fees:{principalVnd:string;feeVnd:string}[]){
   const rates=fees.filter(row=>new Decimal(row.principalVnd).gt(0)).map(row=>new Decimal(row.feeVnd).div(row.principalVnd)).sort((a,b)=>a.comparedTo(b));
-  if(!rates.length)return {median:null,p90:null,outlierCount:0};
+  if(!rates.length)return {minimum:null,median:null,p90:null,maximum:null,outlierCount:0};
   const quantile=(p:number)=>rates[Math.ceil((rates.length-1)*p)];const median=quantile(.5);const p90=quantile(.9);
-  return {median:median.toFixed(8),p90:p90.toFixed(8),outlierCount:rates.filter(rate=>rate.gt(p90)).length};
+  return {minimum:rates[0].toFixed(12),median:median.toFixed(8),p90:p90.toFixed(8),maximum:rates.at(-1)!.toFixed(12),outlierCount:rates.filter(rate=>rate.gt(p90)).length};
 }
 
 export const INTERNAL_NETTING_ADVANTAGE_LABEL="内部对冲优势（Replacement Cost Avoided）" as const;
