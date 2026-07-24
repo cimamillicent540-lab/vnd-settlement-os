@@ -115,11 +115,58 @@ export function finalizePayoutExecution(input: {
 
 export function merchantFeeRate(
   merchantFeeUsdt: string,
-  amountUsdt: string,
+  merchantPrincipalUsdt: string,
 ) {
-  const amount = new Decimal(amountUsdt);
-  if (!amount.gt(0)) return null;
-  return new Decimal(merchantFeeUsdt).div(amount).toFixed(18);
+  const principal = new Decimal(merchantPrincipalUsdt);
+  if (!principal.gt(0)) return null;
+  return new Decimal(merchantFeeUsdt).div(principal).toFixed(18);
+}
+
+export function merchantPrincipalFromTotalDebit(
+  merchantTotalDebitUsdt: string,
+  merchantFeeUsdt: string,
+) {
+  const principal = new Decimal(merchantTotalDebitUsdt).minus(
+    merchantFeeUsdt,
+  );
+  if (principal.isNegative()) {
+    throw new Error("Merchant fee cannot exceed total debit");
+  }
+  return principal.toFixed(8);
+}
+
+export function feeRateOnTotal(
+  merchantFeeUsdt: string,
+  merchantTotalDebitUsdt: string,
+) {
+  const total = new Decimal(merchantTotalDebitUsdt);
+  if (!total.gt(0)) return null;
+  return new Decimal(merchantFeeUsdt).div(total).toFixed(18);
+}
+
+export function estimateMerchantFeeFromPrincipal(
+  merchantPrincipalUsdt: string,
+  approvedMerchantFeeRate: string,
+) {
+  return new Decimal(merchantPrincipalUsdt)
+    .mul(approvedMerchantFeeRate)
+    .toFixed(8);
+}
+
+export function splitMerchantTotalDebit(
+  merchantTotalDebitUsdt: string,
+  approvedMerchantFeeRate: string,
+) {
+  const total = new Decimal(merchantTotalDebitUsdt);
+  const rate = new Decimal(approvedMerchantFeeRate);
+  if (total.isNegative() || rate.isNegative()) {
+    throw new Error("Merchant total debit and fee rate must be non-negative");
+  }
+  const principal = total.div(rate.plus(1));
+  return {
+    merchantPrincipalUsdt: principal.toFixed(8),
+    merchantFeeUsdt: total.minus(principal).toFixed(8),
+  };
 }
 
 export function calculateCompanyRevenue(input: {
@@ -139,14 +186,14 @@ export function calculateCompanyRevenue(input: {
 }
 
 export function calculateTask25EconomicProfit(input: {
-  amountUsdt: string;
+  merchantPrincipalUsdt: string;
   merchantFeeUsdt: string;
   dccRevenueUsdt: string;
   fundingPrincipalCostUsdt: string;
   upstreamPayoutFeeUsdt: string;
   otherCompanyCostUsdt?: string;
 }) {
-  const revenue = new Decimal(input.amountUsdt)
+  const revenue = new Decimal(input.merchantPrincipalUsdt)
     .plus(input.merchantFeeUsdt)
     .plus(input.dccRevenueUsdt);
   const cost = new Decimal(input.fundingPrincipalCostUsdt)
@@ -155,9 +202,24 @@ export function calculateTask25EconomicProfit(input: {
   const profit = revenue.minus(cost);
   return {
     economicProfitUsdt: profit.toFixed(8),
-    economicProfitMargin: new Decimal(input.amountUsdt).gt(0)
-      ? profit.div(input.amountUsdt).toFixed(12)
+    economicProfitMargin: new Decimal(input.merchantPrincipalUsdt).gt(0)
+      ? profit.div(input.merchantPrincipalUsdt).toFixed(12)
       : null,
+  };
+}
+
+export function aggregateExecutionValidation(input: {
+  successfulUnrefundedRows: number;
+  exactPayoutMatches: number;
+}) {
+  return {
+    status:
+      input.successfulUnrefundedRows > 0
+        ? ("AGGREGATE_EXECUTION_VALIDATED" as const)
+        : ("NOT_APPLICABLE" as const),
+    aggregateValidatedCount: input.successfulUnrefundedRows,
+    perOrderVerifiedCount: input.exactPayoutMatches,
+    equivalentToPerOrderVerified: false as const,
   };
 }
 

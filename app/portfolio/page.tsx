@@ -37,6 +37,10 @@ export default async function PortfolioPage() {
     "merchant_fee_revenue_usdt",
   );
   const dccRevenue = sum(summaries, "dcc_revenue_usdt");
+  const totalCompanyRevenue = sum(
+    summaries,
+    "total_company_revenue_usdt",
+  );
   const upstreamPayoutFee = sum(summaries, "upstream_payout_fee_vnd");
   const refundCount = sum(summaries, "refund_count");
   const refundReversal = sum(summaries, "refund_reversal_vnd");
@@ -55,6 +59,10 @@ export default async function PortfolioPage() {
   const atTarget = sum(
     summaries,
     "at_or_above_target_margin_count",
+  );
+  const betweenMinimumAndTarget = Math.max(
+    0,
+    verified + partial + estimated - belowMinimum - atTarget,
   );
   const feeStats = payoutFeeDistribution(
     data.fees.map((row) => ({
@@ -88,7 +96,20 @@ export default async function PortfolioPage() {
           ).toLocaleString()}{" "}
           条 Account History 代付均未找到真实标识符精确匹配，
           金额或时间不会被提升为 VERIFIED；Net Settlement 的 USDT
-          对手腿方向仍待确认。
+          对手腿方向仍待确认。聚合账户流水状态为{" "}
+          <strong>
+            {data.validation?.aggregate_execution_validation_status ??
+              "NOT_APPLICABLE"}
+          </strong>
+          ，不等同于单笔订单验证。
+        </div>
+      </div>
+      <div className="alert alert-info" style={{ marginBottom: 16 }}>
+        <CircleDollarSign size={16} />
+        <div>
+          <strong>公司收入公式：</strong>
+          商户手续费收入 + 有符号 DCC 收入 = 公司总收入。DCC
+          为正时表示公司收入，为负时表示商户优惠或公司承担成本。
         </div>
       </div>
 
@@ -96,15 +117,28 @@ export default async function PortfolioPage() {
         <KpiCard
           label="商户手续费收入"
           value={formatUsdt(merchantFeeRevenue, 2)}
-          note={<span>各商户 fee_usdt / amount_usdt</span>}
+          note={<span>真实 fee_usdt；正式费率分母为商户本金</span>}
           icon={CircleDollarSign}
         />
         <KpiCard
           label="DCC 收入"
           value={formatUsdt(dccRevenue, 2)}
-          note={<span>与商户手续费分开，只计一次</span>}
+          note={
+            <span>
+              {dccRevenue >= 0
+                ? "正数：增加公司收入"
+                : "负数：优惠或公司承担成本"}
+            </span>
+          }
           icon={CircleDollarSign}
           color="#0f9f78"
+        />
+        <KpiCard
+          label="公司总收入"
+          value={formatUsdt(totalCompanyRevenue, 2)}
+          note={<span>商户手续费收入 + 有符号 DCC 收入</span>}
+          icon={CircleDollarSign}
+          color="#155eef"
         />
         <KpiCard
           label="实际上游 Payout 成本"
@@ -200,6 +234,20 @@ export default async function PortfolioPage() {
                 <span className="metric-label">达到千5</span>
                 <span className="metric-value">{atTarget.toLocaleString()}</span>
               </div>
+              <div className="metric-row">
+                <span className="metric-label">千2至千5</span>
+                <span className="metric-value">
+                  {betweenMinimumAndTarget.toLocaleString()}
+                </span>
+              </div>
+              <div className="metric-row">
+                <span className="metric-label">聚合执行验证</span>
+                <span className="metric-value">
+                  {Number(
+                    data.validation?.aggregate_execution_validated_count ?? 0,
+                  ).toLocaleString()}
+                </span>
+              </div>
             </div>
           </CardContent>
         </Card>
@@ -257,7 +305,7 @@ export default async function PortfolioPage() {
           <div>
             <h2 className="panel-title">商户手续费率分布</h2>
             <div className="panel-subtitle">
-              不设统一费率；DCC 不包含在本表费率中
+              正式费率 = 手续费 ÷ 商户本金；DCC 不包含在本表费率中
             </div>
           </div>
           <Badge variant="blue">{data.merchantFees.length} MERCHANTS</Badge>
@@ -269,9 +317,11 @@ export default async function PortfolioPage() {
                 <th>商户</th>
                 <th style={{ textAlign: "right" }}>订单数</th>
                 <th style={{ textAlign: "right" }}>手续费收入</th>
+                <th style={{ textAlign: "right" }}>商户本金</th>
                 <th style={{ textAlign: "right" }}>最小费率</th>
                 <th style={{ textAlign: "right" }}>中位费率</th>
                 <th style={{ textAlign: "right" }}>最大费率</th>
+                <th style={{ textAlign: "right" }}>总扣款口径诊断</th>
                 <th style={{ textAlign: "right" }}>DCC 收入</th>
               </tr>
             </thead>
@@ -284,6 +334,9 @@ export default async function PortfolioPage() {
                   </td>
                   <td className="money">
                     {formatUsdt(row.merchant_fee_usdt ?? 0, 2)}
+                  </td>
+                  <td className="money">
+                    {formatUsdt(row.merchant_principal_usdt ?? 0, 2)}
                   </td>
                   <td className="money">
                     {(Number(row.minimum_merchant_fee_rate ?? 0) * 100).toFixed(
@@ -299,6 +352,12 @@ export default async function PortfolioPage() {
                   </td>
                   <td className="money">
                     {(Number(row.maximum_merchant_fee_rate ?? 0) * 100).toFixed(
+                      4,
+                    )}
+                    %
+                  </td>
+                  <td className="money">
+                    {(Number(row.median_fee_rate_on_total ?? 0) * 100).toFixed(
                       4,
                     )}
                     %

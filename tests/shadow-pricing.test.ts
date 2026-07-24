@@ -39,6 +39,7 @@ describe("Task 2 shadow quote",()=>{
  it("validates the VND per USDT direction",()=>{expect(requireVndPerUsdt("VND_PER_USDT","26000")).toBe("26000.000000000000");expect(()=>requireVndPerUsdt("USDT_PER_VND","0.000038")).toThrow()});
  it("shows higher AS means lower profit",()=>expect(Number(calculateShadowQuote({...base,targetMargin:"0.002",currentAsRate:"26000"}).currentEconomicMargin)).toBeLessThan(Number(calculateShadowQuote({...base,targetMargin:"0.002",currentAsRate:"25000"}).currentEconomicMargin)));
  it("solves percentage payout fee algebraically",()=>expect(calculateShadowQuote({receivedUsdt:"1",economicCostPerVnd:"0.00004",payoutFeeRate:"0.005",targetMargin:"0.002"}).maxMerchantPrincipalVnd).toBe("24825.87"));
+ it("inverts a total merchant debit before applying the approved fee",()=>expect(calculateShadowQuote({receivedUsdt:"100.5",merchantAmountBasis:"TOTAL_DEBIT",approvedMerchantFeeRate:"0.005",economicCostPerVnd:"0.00004",targetMargin:"0.002"})).toMatchObject({merchantPrincipalUsdt:"100.00000000",estimatedMerchantFeeUsdt:"0.50000000",merchantTotalDebitUsdt:"100.50000000"}));
 });
 
 describe("Task 2 data confidence and diagnostics",()=>{

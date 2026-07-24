@@ -153,7 +153,10 @@ export async function getQualitySnapshot() {
   const { data: run, error: runError } = await db
     .from("shadow_pricing_runs")
     .select("id")
-    .eq("rules_version", "SHADOW_PRICING_REAL_VALIDATION_V1")
+    .eq(
+      "rules_version",
+      "SHADOW_PRICING_MERCHANT_FEE_DENOMINATOR_DCC_SIGNED_ADDITION_V1",
+    )
     .order("created_at", { ascending: false })
     .limit(1)
     .maybeSingle();
@@ -221,7 +224,7 @@ export async function getQualitySnapshot() {
     db
       .from("task25_validation_runs")
       .select(
-        "source_file_name,total_source_rows,vnd_source_rows,imported_rows,duplicate_rows,excluded_non_vnd_rows,payout_exact_match_rows,payout_unmatched_rows,refund_matched_rows,refund_unmatched_rows,balance_mismatch_rows,continuity_mismatch_rows",
+        "source_file_name,total_source_rows,vnd_source_rows,imported_rows,duplicate_rows,excluded_non_vnd_rows,payout_exact_match_rows,payout_unmatched_rows,successful_unrefunded_rows,aggregate_execution_validation_status,aggregate_execution_validated_count,refund_matched_rows,refund_unmatched_rows,balance_mismatch_rows,continuity_mismatch_rows",
       )
       .order("created_at", { ascending: false })
       .limit(1)
@@ -303,7 +306,10 @@ export async function getPortfolioData() {
       "id,run_version,rules_version,created_at,data_cutoff_snapshot,status,shadow_mode",
     )
     .eq("run_type", "HISTORICAL_BACKTEST")
-    .eq("rules_version", "SHADOW_PRICING_REAL_VALIDATION_V1")
+    .eq(
+      "rules_version",
+      "SHADOW_PRICING_MERCHANT_FEE_DENOMINATOR_DCC_SIGNED_ADDITION_V1",
+    )
     .order("created_at", { ascending: false })
     .limit(1)
     .maybeSingle();
@@ -338,7 +344,7 @@ export async function getPortfolioData() {
     db
       .from("payout_profit_calculations")
       .select(
-        "id,payout_order_id,economic_profit_usdt,economic_profit_margin,profit_verification_status,data_completeness_status,current_manual_as_rate,minimum_margin_quote,target_margin_quote,merchant_fee_usdt,dcc_revenue_usdt,total_company_revenue_usdt,payout_execution_cost_status,final_payout_status,created_at",
+        "id,payout_order_id,economic_profit_usdt,economic_profit_margin,profit_verification_status,data_completeness_status,current_manual_as_rate,minimum_margin_quote,target_margin_quote,merchant_total_debit_usdt,merchant_principal_usdt,merchant_fee_usdt,merchant_fee_rate,fee_rate_on_total,dcc_revenue_usdt,total_company_revenue_usdt,payout_execution_cost_status,final_payout_status,aggregate_execution_validation_status,created_at",
       )
       .eq("pricing_run_id", run.id)
       .order("economic_profit_margin")
@@ -397,6 +403,15 @@ export async function getPayoutPricing(calculationId: string) {
     .maybeSingle();
   if (a) throw a;
   if (!calculation) return null;
+  const calculationSnapshot =
+    calculation.calculation_snapshot &&
+    typeof calculation.calculation_snapshot === "object"
+      ? (calculation.calculation_snapshot as Record<string, unknown>)
+      : {};
+  const allocationRunId = String(
+    calculationSnapshot.source_allocation_run_id ??
+      calculation.pricing_run_id,
+  );
 
   const [
     { data: order, error: b },
@@ -408,7 +423,7 @@ export async function getPayoutPricing(calculationId: string) {
     db
       .from("payout_orders")
       .select(
-        "id,order_number,merchant,merchant_code,channel,received_usdt,amount_usdt,merchant_fee_usdt,merchant_fee_rate,at_dcc_revenue,dcc_revenue_usdt,total_company_revenue_usdt,payout_amount_vnd,total_fee_usdt,status,completed_at",
+        "id,order_number,merchant,merchant_code,channel,received_usdt,amount_usdt,merchant_total_debit_usdt,merchant_principal_usdt,merchant_fee_usdt,merchant_fee_rate,fee_rate_on_total,at_dcc_revenue,dcc_revenue_usdt,total_company_revenue_usdt,payout_amount_vnd,total_fee_usdt,status,completed_at",
       )
       .eq("id", calculation.payout_order_id)
       .single(),
@@ -422,7 +437,7 @@ export async function getPayoutPricing(calculationId: string) {
       .select(
         "id,pool_bucket_id,source_type,allocation_ratio,allocated_gross_outflow_vnd,allocated_settleable_impact_vnd,economic_rate_vnd_per_usdt,cost_method,external_cash_cost_usdt,economic_cost_usdt,internal_netting_advantage_usdt,cost_confidence,allocation_status",
       )
-      .eq("pricing_run_id", calculation.pricing_run_id)
+      .eq("pricing_run_id", allocationRunId)
       .eq("payout_order_id", calculation.payout_order_id)
       .order("source_type"),
     db

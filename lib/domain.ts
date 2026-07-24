@@ -341,18 +341,47 @@ export function deriveArAsFromFiatRates(beforeUsdtPerVnd:string,afterUsdtPerVnd:
   return {arRateVndPerUsdt:ar.toFixed(12),asRateVndPerUsdt:as.toFixed(12),apCalculated:as.div(ar).minus(1).toFixed(12)};
 }
 
-export interface ShadowQuoteInput {receivedUsdt:string;economicCostPerVnd:string;companyBorneFeeUsdt?:string;fixedPayoutFeeVnd?:string;payoutFeeRate?:string;targetMargin:string;currentAsRate?:string;}
+export interface ShadowQuoteInput {
+  receivedUsdt: string;
+  economicCostPerVnd: string;
+  companyBorneFeeUsdt?: string;
+  fixedPayoutFeeVnd?: string;
+  payoutFeeRate?: string;
+  targetMargin: string;
+  currentAsRate?: string;
+  approvedMerchantFeeRate?: string;
+  merchantAmountBasis?: "PRINCIPAL" | "TOTAL_DEBIT";
+}
 export function calculateShadowQuote(input:ShadowQuoteInput){
   const received=new Decimal(input.receivedUsdt);const costPerVnd=new Decimal(input.economicCostPerVnd);const margin=new Decimal(input.targetMargin);const companyFee=new Decimal(input.companyBorneFeeUsdt??0);
-  if(received.lte(0)||costPerVnd.lte(0)||margin.lt(0)||margin.gte(1))throw new Error("Invalid shadow quote input");
-  const maxGross=received.mul(new Decimal(1).minus(margin)).minus(companyFee).div(costPerVnd);
+  const merchantFeeRate = new Decimal(input.approvedMerchantFeeRate ?? 0);
+  if(received.lte(0)||costPerVnd.lte(0)||margin.lt(0)||margin.gte(1)||merchantFeeRate.lt(0))throw new Error("Invalid shadow quote input");
+  const merchantAmountBasis = input.merchantAmountBasis ?? "PRINCIPAL";
+  const merchantPrincipalUsdt = merchantAmountBasis === "TOTAL_DEBIT"
+    ? received.div(merchantFeeRate.plus(1))
+    : received;
+  const estimatedMerchantFeeUsdt = merchantPrincipalUsdt.mul(merchantFeeRate);
+  const merchantTotalDebitUsdt = merchantPrincipalUsdt.plus(
+    estimatedMerchantFeeUsdt,
+  );
+  const maxGross=merchantTotalDebitUsdt.mul(new Decimal(1).minus(margin)).minus(companyFee).div(costPerVnd);
   const fixedFee=new Decimal(input.fixedPayoutFeeVnd??0);const feeRate=input.payoutFeeRate?new Decimal(input.payoutFeeRate):null;
   const principal=feeRate?maxGross.div(new Decimal(1).plus(feeRate)):maxGross.minus(fixedFee);
-  const recommended=principal.div(received);
-  const currentPrincipal=input.currentAsRate?received.mul(input.currentAsRate):null;
+  const recommended=principal.div(merchantPrincipalUsdt);
+  const currentPrincipal=input.currentAsRate?merchantPrincipalUsdt.mul(input.currentAsRate):null;
   const currentGross=currentPrincipal?(feeRate?currentPrincipal.mul(new Decimal(1).plus(feeRate)):currentPrincipal.plus(fixedFee)):null;
-  const currentProfit=currentGross?received.minus(companyFee).minus(currentGross.mul(costPerVnd)):null;
-  return {maxGrossOutflowVnd:maxGross.toFixed(2),maxMerchantPrincipalVnd:principal.toFixed(2),recommendedAsRateVndPerUsdt:recommended.toFixed(8),currentEconomicProfitUsdt:currentProfit?.toFixed(8)??null,currentEconomicMargin:currentProfit?.div(received).toFixed(8)??null};
+  const currentProfit=currentGross?merchantTotalDebitUsdt.minus(companyFee).minus(currentGross.mul(costPerVnd)):null;
+  return {
+    merchantAmountBasis,
+    merchantPrincipalUsdt:merchantPrincipalUsdt.toFixed(8),
+    estimatedMerchantFeeUsdt:estimatedMerchantFeeUsdt.toFixed(8),
+    merchantTotalDebitUsdt:merchantTotalDebitUsdt.toFixed(8),
+    maxGrossOutflowVnd:maxGross.toFixed(2),
+    maxMerchantPrincipalVnd:principal.toFixed(2),
+    recommendedAsRateVndPerUsdt:recommended.toFixed(8),
+    currentEconomicProfitUsdt:currentProfit?.toFixed(8)??null,
+    currentEconomicMargin:currentProfit?.div(merchantPrincipalUsdt).toFixed(8)??null,
+  };
 }
 
 export interface MatchablePayout {id:string;orderNumber:string;channelOrderNumber?:string|null;merchantOrderNumber?:string|null;currency:string;payoutAmountVnd:string;completedAt:string;manualMatchAccountId?:string|null;}

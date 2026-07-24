@@ -1,8 +1,141 @@
-import {NextResponse} from "next/server";
-import {createClient} from "@supabase/supabase-js";
-import {z} from "zod";
-import {calculateShadowQuote} from "@/lib/domain";
-import {normalizeSupabaseUrl} from "@/lib/supabase-url";
+import { NextResponse } from "next/server";
+import { createClient } from "@supabase/supabase-js";
+import { z } from "zod";
 
-const payload=z.object({receivedUsdt:z.string().regex(/^\d+(\.\d{1,8})?$/),merchant:z.string().max(160),channel:z.string().max(160),currentAsRate:z.string().regex(/^\d+(\.\d{1,12})?$/),estimatedPayoutFeeVnd:z.string().regex(/^\d+(\.\d{1,4})?$/),economicCostPerVnd:z.string().regex(/^0\.\d+$/),replacementRate:z.string().regex(/^\d+(\.\d{1,12})?$/)});
-export async function POST(request:Request){const parsed=payload.safeParse(await request.json());if(!parsed.success)return NextResponse.json({message:"影子报价输入校验失败",details:parsed.error.flatten()},{status:400});const url=normalizeSupabaseUrl(process.env.NEXT_PUBLIC_SUPABASE_URL);const key=process.env.NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY??process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY;const authorization=request.headers.get("authorization");if(!url||!key)return NextResponse.json({message:"Supabase 环境变量未配置"},{status:503});if(!authorization)return NextResponse.json({message:"保存 Shadow Run 需要内部认证"},{status:401});const db=createClient(url,key,{auth:{persistSession:false},global:{headers:{Authorization:authorization}}});const {data:{user}}=await db.auth.getUser();if(!user)return NextResponse.json({message:"登录已失效"},{status:401});const input=parsed.data;const quotes=["0.002","0.005"].map(targetMargin=>({targetMargin,result:calculateShadowQuote({receivedUsdt:input.receivedUsdt,economicCostPerVnd:input.economicCostPerVnd,fixedPayoutFeeVnd:input.estimatedPayoutFeeVnd,targetMargin,currentAsRate:input.currentAsRate})}));const {data:run,error:runError}=await db.from("shadow_pricing_runs").insert({run_type:"INTERACTIVE_QUOTE",rules_version:"SHADOW_PRICING_V1",input_snapshot:{...input,rate_direction:"VND_PER_USDT"},data_cutoff_snapshot:{account_history:"2026-07-18 23:59:28 UTC+8",topup:"2026-07-20 DATE_ONLY",payout:"2026-07-20 23:59:55 UTC+8",completeness:"PARTIAL_AFTER_ACCOUNT_HISTORY_CUTOFF"},status:"PARTIAL",shadow_mode:true,created_by:user.id}).select("id,run_version").single();if(runError)return NextResponse.json({message:runError.message},{status:500});const {error:resultError}=await db.from("shadow_pricing_results").insert(quotes.map(({targetMargin,result})=>({pricing_run_id:run.id,target_margin:targetMargin,received_usdt:input.receivedUsdt,economic_cost_per_vnd:input.economicCostPerVnd,estimated_payout_fee_vnd:input.estimatedPayoutFeeVnd,max_gross_outflow_vnd:result.maxGrossOutflowVnd,max_merchant_principal_vnd:result.maxMerchantPrincipalVnd,recommended_as_rate:result.recommendedAsRateVndPerUsdt,current_manual_as_rate:input.currentAsRate,merchant_principal_difference_vnd:Number(result.maxMerchantPrincipalVnd)-Number(input.receivedUsdt)*Number(input.currentAsRate),expected_economic_margin:result.currentEconomicMargin,profit_verification_status:"ESTIMATED",data_completeness_status:"MULTIPLE_ISSUES",confidence:"LOW",result_snapshot:{...result,issues:["PARTIAL_AFTER_ACCOUNT_HISTORY_CUTOFF","DATE_ONLY_RATE","MANUAL_FEE_INPUT"],automatic_execution:false}})));if(resultError)return NextResponse.json({message:resultError.message},{status:500});return NextResponse.json({ok:true,run,quotes});}
+import { calculateShadowQuote } from "@/lib/domain";
+import { normalizeSupabaseUrl } from "@/lib/supabase-url";
+
+const decimal = /^\d+(\.\d{1,12})?$/;
+const payload = z.object({
+  receivedUsdt: z.string().regex(/^\d+(\.\d{1,8})?$/),
+  merchantAmountBasis: z.literal("TOTAL_DEBIT"),
+  approvedMerchantFeeRate: z.string().regex(/^0(\.\d{1,8})?$/),
+  merchant: z.string().max(160),
+  channel: z.string().max(160),
+  currentAsRate: z.string().regex(decimal),
+  estimatedPayoutFeeVnd: z.string().regex(/^\d+(\.\d{1,4})?$/),
+  economicCostPerVnd: z.string().regex(/^0\.\d+$/),
+  replacementRate: z.string().regex(decimal),
+});
+
+export async function POST(request: Request) {
+  const parsed = payload.safeParse(await request.json());
+  if (!parsed.success) {
+    return NextResponse.json(
+      {
+        message: "影子报价输入校验失败",
+        details: parsed.error.flatten(),
+      },
+      { status: 400 },
+    );
+  }
+  const url = normalizeSupabaseUrl(process.env.NEXT_PUBLIC_SUPABASE_URL);
+  const key =
+    process.env.NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY ??
+    process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY;
+  const authorization = request.headers.get("authorization");
+  if (!url || !key) {
+    return NextResponse.json(
+      { message: "Supabase 环境变量未配置" },
+      { status: 503 },
+    );
+  }
+  if (!authorization) {
+    return NextResponse.json(
+      { message: "保存 Shadow Run 需要内部认证" },
+      { status: 401 },
+    );
+  }
+  const db = createClient(url, key, {
+    auth: { persistSession: false },
+    global: { headers: { Authorization: authorization } },
+  });
+  const {
+    data: { user },
+  } = await db.auth.getUser();
+  if (!user) {
+    return NextResponse.json({ message: "登录已失效" }, { status: 401 });
+  }
+
+  const input = parsed.data;
+  const quotes = ["0.002", "0.005"].map((targetMargin) => ({
+    targetMargin,
+    result: calculateShadowQuote({
+      receivedUsdt: input.receivedUsdt,
+      merchantAmountBasis: input.merchantAmountBasis,
+      approvedMerchantFeeRate: input.approvedMerchantFeeRate,
+      economicCostPerVnd: input.economicCostPerVnd,
+      fixedPayoutFeeVnd: input.estimatedPayoutFeeVnd,
+      targetMargin,
+      currentAsRate: input.currentAsRate,
+    }),
+  }));
+  const { data: run, error: runError } = await db
+    .from("shadow_pricing_runs")
+    .insert({
+      run_type: "INTERACTIVE_QUOTE",
+      rules_version:
+        "SHADOW_PRICING_MERCHANT_FEE_DENOMINATOR_DCC_SIGNED_ADDITION_V1",
+      input_snapshot: {
+        ...input,
+        rate_direction: "VND_PER_USDT",
+        merchant_fee_denominator: "MERCHANT_PRINCIPAL_USDT",
+        automatic_funds_actions: false,
+      },
+      data_cutoff_snapshot: {
+        account_history: "2026-07-18 23:59:28 UTC+8",
+        topup: "2026-07-20 DATE_ONLY",
+        payout: "2026-07-20 23:59:55 UTC+8",
+        completeness: "PARTIAL_AFTER_ACCOUNT_HISTORY_CUTOFF",
+      },
+      status: "PARTIAL",
+      shadow_mode: true,
+      created_by: user.id,
+    })
+    .select("id,run_version")
+    .single();
+  if (runError) {
+    return NextResponse.json({ message: runError.message }, { status: 500 });
+  }
+
+  const { error: resultError } = await db
+    .from("shadow_pricing_results")
+    .insert(
+      quotes.map(({ targetMargin, result }) => ({
+        pricing_run_id: run.id,
+        target_margin: targetMargin,
+        received_usdt: input.receivedUsdt,
+        economic_cost_per_vnd: input.economicCostPerVnd,
+        estimated_payout_fee_vnd: input.estimatedPayoutFeeVnd,
+        max_gross_outflow_vnd: result.maxGrossOutflowVnd,
+        max_merchant_principal_vnd: result.maxMerchantPrincipalVnd,
+        recommended_as_rate: result.recommendedAsRateVndPerUsdt,
+        current_manual_as_rate: input.currentAsRate,
+        merchant_principal_difference_vnd:
+          Number(result.maxMerchantPrincipalVnd) -
+          Number(result.merchantPrincipalUsdt) * Number(input.currentAsRate),
+        expected_economic_margin: result.currentEconomicMargin,
+        profit_verification_status: "ESTIMATED",
+        data_completeness_status: "MULTIPLE_ISSUES",
+        confidence: "LOW",
+        result_snapshot: {
+          ...result,
+          approved_merchant_fee_rate: input.approvedMerchantFeeRate,
+          merchant_fee_denominator: "MERCHANT_PRINCIPAL_USDT",
+          issues: [
+            "PARTIAL_AFTER_ACCOUNT_HISTORY_CUTOFF",
+            "DATE_ONLY_RATE",
+            "MANUAL_FEE_INPUT",
+          ],
+          automatic_execution: false,
+        },
+      })),
+    );
+  if (resultError) {
+    return NextResponse.json(
+      { message: resultError.message },
+      { status: 500 },
+    );
+  }
+  return NextResponse.json({ ok: true, run, quotes });
+}

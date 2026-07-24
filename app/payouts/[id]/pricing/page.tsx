@@ -22,6 +22,7 @@ export default async function PayoutPricingPage({
   const matchMethod =
     execution?.match_method ?? "NO_EXACT_IDENTIFIER_MATCH";
   const matchConfidence = execution?.match_confidence ?? "NONE";
+  const dccRevenue = Number(calculation.dcc_revenue_usdt ?? 0);
 
   return (
     <>
@@ -37,7 +38,10 @@ export default async function PayoutPricingPage({
           <strong>{calculation.data_completeness_status}</strong>
           未找到 Account History 业务订单号与本 Payout
           的真实标识符精确对应，因此执行成本保持 ESTIMATED；金额与时间候选不会标记
-          VERIFIED，也不会执行真实报价或资金操作。
+          VERIFIED。聚合账户流水可标记{" "}
+          {calculation.aggregate_execution_validation_status ??
+            "NOT_APPLICABLE"}
+          ，但不等同于本单 VERIFIED，也不会执行真实报价或资金操作。
         </div>
       </div>
 
@@ -53,7 +57,7 @@ export default async function PayoutPricingPage({
           value={formatUsdt(calculation.merchant_fee_usdt ?? 0, 4)}
           note={
             <span>
-              费率{" "}
+              正式费率（手续费 ÷ USDT 本金）{" "}
               {(Number(calculation.merchant_fee_rate ?? 0) * 100).toFixed(4)}%
             </span>
           }
@@ -63,7 +67,13 @@ export default async function PayoutPricingPage({
         <KpiCard
           label="DCC 收入"
           value={formatUsdt(calculation.dcc_revenue_usdt ?? 0, 4)}
-          note={<span>独立收入，只计一次</span>}
+          note={
+            <span>
+              {dccRevenue >= 0
+                ? "正数：增加公司收入"
+                : "负数：优惠或公司承担成本"}
+            </span>
+          }
           icon={CircleDollarSign}
           color="#0f9f78"
         />
@@ -143,7 +153,7 @@ export default async function PayoutPricingPage({
             <div>
               <h2 className="panel-title">收入与 DCC 诊断</h2>
               <div className="panel-subtitle">
-                商户手续费不再作为公司成本
+                商户手续费收入 + 有符号 DCC 收入 = 公司总收入
               </div>
             </div>
             <Badge variant="violet">SEPARATED</Badge>
@@ -151,9 +161,18 @@ export default async function PayoutPricingPage({
           <CardContent>
             <div className="metric-list">
               <div className="metric-row">
-                <span className="metric-label">Amount USDT</span>
+                <span className="metric-label">商户总扣款 USDT</span>
                 <span className="metric-value">
-                  {formatUsdt(calculation.amount_usdt ?? 0, 4)}
+                  {formatUsdt(
+                    calculation.merchant_total_debit_usdt ?? 0,
+                    4,
+                  )}
+                </span>
+              </div>
+              <div className="metric-row">
+                <span className="metric-label">商户本金 USDT</span>
+                <span className="metric-value">
+                  {formatUsdt(calculation.merchant_principal_usdt ?? 0, 4)}
                 </span>
               </div>
               <div className="metric-row">
@@ -163,9 +182,20 @@ export default async function PayoutPricingPage({
                 </span>
               </div>
               <div className="metric-row">
-                <span className="metric-label">DCC 收入</span>
+                <span className="metric-label">
+                  DCC {dccRevenue >= 0 ? "收入" : "优惠/成本"}
+                </span>
                 <span className="metric-value">
                   {formatUsdt(calculation.dcc_revenue_usdt ?? 0, 4)}
+                </span>
+              </div>
+              <div className="metric-row">
+                <span className="metric-label">总扣款口径费率（诊断）</span>
+                <span className="metric-value">
+                  {(Number(calculation.fee_rate_on_total ?? 0) * 100).toFixed(
+                    4,
+                  )}
+                  %
                 </span>
               </div>
               <div className="metric-row">
