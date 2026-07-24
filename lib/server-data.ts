@@ -2,6 +2,19 @@ import "server-only";
 
 import { createClient } from "@supabase/supabase-js";
 
+import {
+  allocateFifoInventory,
+  buildSettlementRiskAlerts,
+  calculateFxIntelligence,
+  forecastProfit,
+  recommendCustomerQuote,
+  recommendTargetMargin,
+  recommendTopup,
+  SHADOW_MODE_GUARD,
+  summarizePeakWindow,
+  type HourlyLiquidityRow,
+  type VndInventoryBatch,
+} from "./settlement-intelligence";
 import { normalizeSupabaseUrl } from "./supabase-url";
 
 export function serverClient() {
@@ -575,5 +588,254 @@ export async function getPayoutPricing(calculationId: string) {
     execution,
     identifiers,
     allocations: allocations ?? [],
+  };
+}
+
+export async function getSettlementIntelligenceData() {
+  const db = serverClient();
+  const now = new Date().toISOString();
+  const [
+    { data: poolRows, error: poolError },
+    { data: hourlyRows, error: hourlyError },
+    { data: inventoryRows, error: inventoryError },
+    { data: xeInput, error: xeError },
+    { data: p2pInputs, error: p2pError },
+    { data: adjustmentRule, error: adjustmentError },
+    { data: revenueBenchmark, error: revenueError },
+    { data: accountCutoff, error: accountCutoffError },
+    { data: topupCutoff, error: topupCutoffError },
+    { data: payoutCutoff, error: payoutCutoffError },
+  ] = await Promise.all([
+    db
+      .from("pool_buckets")
+      .select(
+        "gross_available_amount_vnd,reserve_amount_vnd,settleable_available_amount_vnd",
+      )
+      .eq("currency", "VND")
+      .eq("status", "OPEN"),
+    db
+      .from("hourly_liquidity_forecast")
+      .select(
+        "local_hour,observed_days,forecast_payin_vnd,forecast_payout_vnd,forecast_net_demand_vnd,is_peak_window,payout_concentration_ratio",
+      )
+      .order("local_hour"),
+    db
+      .from("vnd_inventory_positions")
+      .select(
+        "id,topup_batch_id,batch_time,batch_date,time_precision,usdt_amount,vnd_amount,cost_rate,source,remaining_amount,remaining_ratio,cost_source_type,historical_cost_locked,status,model_version,shadow_mode",
+      )
+      .gt("remaining_amount", 0)
+      .order("batch_date")
+      .order("batch_time", { nullsFirst: true }),
+    db
+      .from("fx_market_inputs")
+      .select("id,rate_value,source,record_time,operator")
+      .eq("currency", "VND")
+      .eq("rate_type", "XE_BASE_RATE")
+      .order("record_time", { ascending: false })
+      .order("id", { ascending: false })
+      .limit(1)
+      .maybeSingle(),
+    db
+      .from("fx_market_inputs")
+      .select("id,rate_value,source,record_time,operator")
+      .eq("currency", "VND")
+      .eq("rate_type", "P2P_COST_RATE")
+      .order("record_time", { ascending: false })
+      .order("id", { ascending: false })
+      .limit(20),
+    db
+      .from("quote_adjustment_rules")
+      .select(
+        "id,base_source,adjustment,reason,effective_time,operator,status",
+      )
+      .eq("currency", "VND")
+      .eq("base_source", "XE")
+      .eq("status", "ACTIVE")
+      .lte("effective_time", now)
+      .order("effective_time", { ascending: false })
+      .order("id", { ascending: false })
+      .limit(1)
+      .maybeSingle(),
+    db
+      .from("settlement_revenue_rate_benchmarks")
+      .select("*")
+      .maybeSingle(),
+    db
+      .from("account_history_entries")
+      .select("source_local_time,source_timezone,transaction_time")
+      .order("transaction_time", { ascending: false })
+      .order("source_row_number")
+      .limit(1)
+      .maybeSingle(),
+    db
+      .from("topup_batches")
+      .select("execution_date,time_precision")
+      .order("execution_date", { ascending: false })
+      .order("sequence_within_date", { ascending: false })
+      .limit(1)
+      .maybeSingle(),
+    db
+      .from("payout_orders")
+      .select("completed_at")
+      .not("completed_at", "is", null)
+      .order("completed_at", { ascending: false })
+      .limit(1)
+      .maybeSingle(),
+  ]);
+  const error =
+    poolError ??
+    hourlyError ??
+    inventoryError ??
+    xeError ??
+    p2pError ??
+    adjustmentError ??
+    revenueError ??
+    accountCutoffError ??
+    topupCutoffError ??
+    payoutCutoffError;
+  if (error) throw error;
+
+  const balances = (poolRows ?? []).reduce(
+    (totals, row) => ({
+      grossBalanceVnd:
+        totals.grossBalanceVnd +
+        Number(row.gross_available_amount_vnd ?? 0),
+      reserveBalanceVnd:
+        totals.reserveBalanceVnd + Number(row.reserve_amount_vnd ?? 0),
+      settleableBalanceVnd:
+        totals.settleableBalanceVnd +
+        Number(row.settleable_available_amount_vnd ?? 0),
+    }),
+    {
+      grossBalanceVnd: 0,
+      reserveBalanceVnd: 0,
+      settleableBalanceVnd: 0,
+    },
+  );
+  const hourly = (hourlyRows ?? []).map((row) => ({
+    localHour: Number(row.local_hour),
+    observedDays: Number(row.observed_days ?? 0),
+    forecastPayinVnd: String(row.forecast_payin_vnd ?? 0),
+    forecastPayoutVnd: String(row.forecast_payout_vnd ?? 0),
+    forecastNetDemandVnd: String(row.forecast_net_demand_vnd ?? 0),
+    isPeakWindow: Boolean(row.is_peak_window),
+    payoutConcentrationRatio: String(
+      row.payout_concentration_ratio ?? 0,
+    ),
+  }));
+  const peakWindow = summarizePeakWindow(
+    hourly satisfies HourlyLiquidityRow[],
+  );
+  const latestP2p = p2pInputs?.[0] ?? null;
+  const topupRecommendation = recommendTopup({
+    currentSettleableBalanceVnd: String(
+      balances.settleableBalanceVnd,
+    ),
+    forecastPayoutVnd: peakWindow.forecastPayoutVnd,
+    expectedPayinVnd: peakWindow.forecastPayinVnd,
+    p2pCostRate: latestP2p?.rate_value
+      ? String(latestP2p.rate_value)
+      : null,
+  });
+  const fxIntelligence =
+    xeInput?.rate_value && latestP2p?.rate_value
+      ? calculateFxIntelligence({
+          xeRate: String(xeInput.rate_value),
+          p2pCostRate: String(latestP2p.rate_value),
+          recentP2pRates: (p2pInputs ?? []).map((row) =>
+            String(row.rate_value),
+          ),
+        })
+      : null;
+  const marginRecommendation = recommendTargetMargin({
+    projectedShortfallVnd:
+      topupRecommendation.projectedShortfallVnd,
+    fxVolatility: fxIntelligence?.volatility ?? null,
+    competitionAdjustment:
+      adjustmentRule?.reason === "market_competition"
+        ? "-0.001"
+        : null,
+  });
+  const quoteRecommendation = xeInput?.rate_value
+    ? recommendCustomerQuote({
+        xeRate: String(xeInput.rate_value),
+        companyAdjustment: String(adjustmentRule?.adjustment ?? 0),
+        p2pCostRate: latestP2p?.rate_value
+          ? String(latestP2p.rate_value)
+          : null,
+        targetMargin: marginRecommendation.targetMargin,
+      })
+    : null;
+  const inventoryBatches: VndInventoryBatch[] = (
+    inventoryRows ?? []
+  ).map((row) => ({
+    id: String(row.id),
+    batchDate: String(row.batch_date),
+    batchTime: row.batch_time ? String(row.batch_time) : null,
+    usdtAmount: String(row.usdt_amount),
+    vndAmount: String(row.vnd_amount),
+    costRate: String(row.cost_rate),
+    source: String(row.source),
+    remainingAmount: String(row.remaining_amount),
+  }));
+  const fifoForecast = allocateFifoInventory(
+    inventoryBatches,
+    peakWindow.forecastPayoutVnd,
+  );
+  const profitForecast =
+    quoteRecommendation && fifoForecast.isFullyCovered
+      ? forecastProfit({
+          forecastPayoutVnd: peakWindow.forecastPayoutVnd,
+          customerQuoteRate:
+            quoteRecommendation.recommendedQuoteRate,
+          fifoCostBasisUsdt: fifoForecast.costBasisUsdt,
+          merchantFeeRate: String(
+            revenueBenchmark?.merchant_fee_rate ?? 0,
+          ),
+          dccRevenueRate: String(
+            revenueBenchmark?.dcc_revenue_rate ?? 0,
+          ),
+        })
+      : null;
+  const riskAlerts = buildSettlementRiskAlerts({
+    projectedShortfallVnd:
+      topupRecommendation.projectedShortfallVnd,
+    expectedProfitMargin:
+      profitForecast?.expectedProfitMargin ?? null,
+    fxVolatility: fxIntelligence?.volatility ?? null,
+    maximumHourlyPayoutConcentration:
+      peakWindow.maximumHourlyPayoutConcentration,
+    hasXeRate: Boolean(xeInput?.rate_value),
+    hasP2pCostRate: Boolean(latestP2p?.rate_value),
+  });
+
+  return {
+    balances,
+    hourly,
+    peakWindow,
+    topupRecommendation,
+    fxIntelligence,
+    xeInput,
+    latestP2p,
+    p2pInputs: p2pInputs ?? [],
+    adjustmentRule,
+    marginRecommendation,
+    quoteRecommendation,
+    inventoryRows: inventoryRows ?? [],
+    fifoForecast,
+    revenueBenchmark,
+    profitForecast,
+    riskAlerts,
+    shadowModeGuard: SHADOW_MODE_GUARD,
+    dataCutoffs: {
+      accountHistoryLocal: accountCutoff?.source_local_time ?? null,
+      accountHistoryTimezone: accountCutoff?.source_timezone ?? null,
+      accountHistoryUtc: accountCutoff?.transaction_time ?? null,
+      topupDate: topupCutoff?.execution_date ?? null,
+      topupTimePrecision: topupCutoff?.time_precision ?? null,
+      payoutUtc: payoutCutoff?.completed_at ?? null,
+      completeness: "PARTIAL_AFTER_ACCOUNT_HISTORY_CUTOFF",
+    },
   };
 }

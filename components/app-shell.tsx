@@ -1,7 +1,7 @@
 "use client";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
-import { Bell, BriefcaseBusiness, Calculator, ChevronDown, CircleHelp, Database, FileInput, FileSpreadsheet, Gauge, PanelLeft, Scale, SearchCheck, ShieldCheck } from "lucide-react";
+import { Activity, Bell, BriefcaseBusiness, Calculator, ChevronDown, CircleHelp, Database, FileInput, FileSpreadsheet, Gauge, PanelLeft, Scale, SearchCheck, ShieldCheck } from "lucide-react";
 import { cn } from "@/lib/utils";
 
 const nav = [
@@ -13,8 +13,9 @@ const nav = [
   { href:"/shadow-pricing", label:"影子报价", icon:Calculator },
   { href:"/portfolio", label:"组合回测", icon:BriefcaseBusiness },
   { href:"/payment-export", label:"付款准备", icon:FileSpreadsheet },
+  { href:"/settlement-intelligence", label:"结算智能决策", icon:Activity },
 ];
-const titles:Record<string,string> = { "/pool":"VND 资金池", "/imports":"数据导入中心", "/topups":"补U批次", "/data-quality":"数据质量与审计", "/reconciliation":"真实数据对账", "/shadow-pricing":"影子报价", "/portfolio":"组合回测", "/payment-export":"付款准备与风险检查" };
+const titles:Record<string,string> = { "/pool":"VND 资金池", "/imports":"数据导入中心", "/topups":"补U批次", "/data-quality":"数据质量与审计", "/reconciliation":"真实数据对账", "/shadow-pricing":"影子报价", "/portfolio":"组合回测", "/payment-export":"付款准备与风险检查", "/settlement-intelligence":"VND结算智能决策" };
 
 export function AppShell({ children }:{ children:React.ReactNode }) {
   const pathname = usePathname();

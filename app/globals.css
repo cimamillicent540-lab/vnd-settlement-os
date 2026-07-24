@@ -171,10 +171,37 @@ tbody tr:last-child td { border-bottom:0; }
 .empty-state { padding:44px 20px; text-align:center; color:#8a94a5; }
 .empty-state svg { margin-bottom:10px; color:#b7c0cd; }
 .empty-state strong { display:block; color:#596579; font-size:12px; margin-bottom:5px; }
+.settlement-shadow-alert { margin-bottom:16px; }
+.settlement-decision-grid { display:grid; grid-template-columns:repeat(4,minmax(0,1fr)); gap:16px; margin-bottom:16px; }
+.settlement-hero-value { font-size:22px; font-weight:740; color:#182235; letter-spacing:-.45px; margin-bottom:20px; font-variant-numeric:tabular-nums; }
+.settlement-reason-list { margin:16px 0 0; padding-left:18px; color:#738095; font-size:10px; line-height:1.65; }
+.settlement-hourly-table { max-height:520px; overflow:auto; }
+.settlement-hourly-table thead { position:sticky; top:0; z-index:2; }
+.peak-hour-row { background:#faf8ff; }
+.peak-hour-row:hover { background:#f6f2ff; }
+.settlement-risk-list { display:grid; gap:11px; }
+.settlement-risk-item { display:grid; grid-template-columns:auto 1fr; align-items:start; gap:10px; padding:11px; border:1px solid #e5e9f0; border-radius:7px; }
+.settlement-risk-item strong { display:block; color:#35425a; font-size:10px; }
+.settlement-risk-item span { display:block; color:#8490a2; font-size:9.5px; line-height:1.5; margin-top:4px; }
+.settlement-cutoff { display:grid; gap:7px; margin-top:18px; padding-top:15px; border-top:1px solid #e8ebf0; color:#7a8495; font-size:9.5px; }
+.settlement-cutoff strong { color:#344054; font-size:10px; }
+.settlement-input-panel { margin-top:16px; }
+.settlement-input-grid { display:grid; grid-template-columns:repeat(2,minmax(0,1fr)); gap:14px; }
+.settlement-input-grid > .alert { grid-column:1 / -1; }
+.settlement-input-card { display:grid; grid-template-columns:repeat(2,minmax(0,1fr)); gap:12px; padding:14px; border:1px solid #e3e8ef; border-radius:8px; background:#fbfcfe; }
+.settlement-input-card > div { grid-column:1 / -1; }
+.settlement-input-card > div strong { display:block; color:#344054; font-size:11px; }
+.settlement-input-card > div span { display:block; color:#8a94a5; font-size:9.5px; margin-top:4px; }
+.settlement-input-card label { color:#667085; font-size:10px; font-weight:620; }
+.settlement-input-card input,.settlement-input-card select { width:100%; height:36px; margin-top:6px; border:1px solid #dfe4eb; border-radius:6px; background:#fff; padding:0 10px; color:#344054; outline:none; }
+.settlement-input-card input:focus,.settlement-input-card select:focus { border-color:#8aacfa; box-shadow:0 0 0 3px #edf3ff; }
+.settlement-input-card .button { align-self:end; margin-top:16px; }
+.settlement-mode-icons { display:flex; align-items:center; gap:8px; color:#5575ad; }
 .skeleton { background:linear-gradient(90deg,#f0f2f5 25%,#f8f9fb 37%,#f0f2f5 63%); background-size:400% 100%; animation:shimmer 1.4s infinite; border-radius:5px; }
 @keyframes shimmer { 0%{background-position:100% 0}100%{background-position:0 0} }
 .spin { animation:spin .9s linear infinite; }
 @keyframes spin { to{transform:rotate(360deg)} }
 
-@media (max-width:1100px) { .kpi-grid{grid-template-columns:repeat(2,1fr)} .grid-2{grid-template-columns:1fr} .quality-grid{grid-template-columns:1fr 1fr} }
-@media (max-width:760px) { .app-shell{grid-template-columns:1fr}.sidebar{height:auto;position:static}.brand{height:58px}.sidebar nav,.sidebar-footer,.nav-section-label{display:none}.main-area{min-width:0}.topbar{height:58px;padding:0 16px}.content{padding:20px 15px 40px}.page-heading{flex-direction:column}.kpi-grid{grid-template-columns:1fr}.quality-grid,.bucket-list,.pricing-form-grid{grid-template-columns:1fr}.user-name,.user-role{display:none}.grid-2{grid-template-columns:1fr}.toolbar-spacer{display:none}.search{flex:1 1 100%;min-width:0}.top-actions .icon-button:first-child{display:none} }
+@media (max-width:1300px) { .settlement-decision-grid{grid-template-columns:repeat(2,minmax(0,1fr))} }
+@media (max-width:1100px) { .kpi-grid{grid-template-columns:repeat(2,1fr)} .grid-2{grid-template-columns:1fr} .quality-grid{grid-template-columns:1fr 1fr} .settlement-input-grid{grid-template-columns:1fr} }
+@media (max-width:760px) { .app-shell{grid-template-columns:1fr}.sidebar{height:auto;position:static}.brand{height:58px}.sidebar nav,.sidebar-footer,.nav-section-label{display:none}.main-area{min-width:0}.topbar{height:58px;padding:0 16px}.content{padding:20px 15px 40px}.page-heading{flex-direction:column}.kpi-grid{grid-template-columns:1fr}.quality-grid,.bucket-list,.pricing-form-grid,.settlement-decision-grid{grid-template-columns:1fr}.settlement-input-card{grid-template-columns:1fr}.settlement-input-card > div{grid-column:auto}.user-name,.user-role{display:none}.grid-2{grid-template-columns:1fr}.toolbar-spacer{display:none}.search{flex:1 1 100%;min-width:0}.top-actions .icon-button:first-child{display:none} }

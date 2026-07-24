@@ -16,7 +16,7 @@ cp .env.example .env.local
 npm run dev
 ```
 
-Open `http://localhost:3000`. Payout readiness and upstream-format payment preparation are available at `/payment-export`.
+Open `http://localhost:3000`. Payout readiness and upstream-format payment preparation are available at `/payment-export`; the daily settlement decision layer is at `/settlement-intelligence`.
 
 Apply Supabase migrations in filename order with the Supabase CLI or dashboard SQL editor. The UI can be previewed without credentials using verified demonstration snapshots; database writes require the three values in `.env.example`.
 
@@ -38,6 +38,12 @@ To verify or import the approved reference appendices:
 node scripts/import-payment-template-reference.mjs --dry-run
 npm run import:payment-template -- "/absolute/path/Batch Payment Templates_Local (1).xlsx"
 ```
+
+## Settlement intelligence
+
+Task 2.7 keeps current manual `XE_BASE_RATE` and `P2P_COST_RATE` observations separate from immutable historical topup costs. Each approved topup becomes an actual-cost VND inventory batch; date-only topups remain date-only. Forecast cost allocation uses FIFO and reports the batch source, cost rate, and USDT cost basis.
+
+The dashboard aggregates the 16:00–23:00 local liquidity profile, compares forecast Payout against forecast Payin and settleable balance, and recommends a manual topup amount when needed. Customer quote suggestions use `XE + Company Adjustment` with a 0.2% minimum and dynamic target-margin protection. All recommendation and snapshot records constrain automatic payment, topup, quote change, and trading flags to `false`.
 
 ## Pool allocation
 
