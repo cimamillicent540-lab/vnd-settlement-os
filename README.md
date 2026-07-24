@@ -1,6 +1,6 @@
 # VND Shadow Pricing & Liquidity OS
 
-Task 1 implements the VND data foundation, browser import pipeline, topup batches, pool ledger, proportional payout allocation, data-quality controls, RBAC and audit trails. It is deliberately **Shadow Mode only**: no real quote changes, payments, topups, channel switching or external trading APIs exist.
+The project implements the VND data foundation, real-data reconciliation, shadow pricing, cost allocation, merchant-fee/DCC economics, and a payout execution guard. It is deliberately **Shadow Mode only**: no real quote changes, payments, topups, channel switching, upstream payment submission, or external trading APIs exist.
 
 ## Stack
 
@@ -16,7 +16,7 @@ cp .env.example .env.local
 npm run dev
 ```
 
-Open `http://localhost:3000`. The four Task 1 routes are `/imports`, `/topups`, `/pool` and `/data-quality`.
+Open `http://localhost:3000`. Payout readiness and upstream-format payment preparation are available at `/payment-export`.
 
 Apply Supabase migrations in filename order with the Supabase CLI or dashboard SQL editor. The UI can be previewed without credentials using verified demonstration snapshots; database writes require the three values in `.env.example`.
 
@@ -25,6 +25,19 @@ Apply Supabase migrations in filename order with the Supabase CLI or dashboard S
 The browser accepts `.xlsx`, `.xls` and `.csv`, reads the first worksheet, previews up to 20 validation rows, recognizes Chinese and English header aliases, and asks the operator to confirm mapping. Payin maps imported transaction fee separately from the computed 0.8% fee. Payout stores AR, AS, imported AP, computed AP and AQ without inventing an AQ composition formula. Invalid rows are isolated; duplicate rows use sanitized row fingerprints, while duplicate files use SHA-256.
 
 Names and surnames with no business need are dropped. Card/PAN fields are masked to their last four digits before preview, validation, payload creation or error reporting.
+
+## Payout execution guard
+
+Task 2.6 integrates the approved `Batch Payment Templates_Local (1).xlsx` contract by SHA-256. The generated upload workbook preserves the three upstream sheet names and the exact 19-field payment header. Example payment rows and the dirty trailing country row are never imported.
+
+Full beneficiary details are stored in a restricted RLS table and are masked in ordinary UI/readiness snapshots. Only `admin` and `settlement_operator` roles can prepare files. A database transaction rechecks the latest `READY` result, duplicate exports, and current settleable balance before registering an export. The output file is downloaded for manual review only; `submitted_to_upstream` and `automatic_execution` are constrained to `false`.
+
+To verify or import the approved reference appendices:
+
+```bash
+node scripts/import-payment-template-reference.mjs --dry-run
+npm run import:payment-template -- "/absolute/path/Batch Payment Templates_Local (1).xlsx"
+```
 
 ## Pool allocation
 

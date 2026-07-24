@@ -42,6 +42,117 @@ export async function getTopups() {
   return data;
 }
 
+export async function getPaymentExecutionData() {
+  const db = serverClient();
+  const [
+    { data: summary, error: summaryError },
+    { data: checks, error: checksError },
+    { data: template, error: templateError },
+    { count: bankCount, error: bankError },
+    { count: countryCount, error: countryError },
+    { data: exportBatches, error: exportError },
+    { data: blockReasons, error: blockReasonError },
+    { data: readyChecks, error: readyError },
+  ] = await Promise.all([
+    db
+      .from("payment_readiness_summary")
+      .select(
+        "check_status,risk_level,order_count,payout_principal_vnd,required_gross_debit_vnd",
+      ),
+    db
+      .from("payment_readiness_latest")
+      .select(
+        "id,payout_order_id,check_status,risk_level,blocking_codes,warning_codes,payout_principal_vnd,required_gross_debit_vnd,beneficiary_snapshot_masked,created_at",
+      )
+      .order("created_at", { ascending: false })
+      .limit(50),
+    db
+      .from("payment_template_versions")
+      .select(
+        "id,version,source_file_name,source_file_hash,source_bank_rows,source_country_rows,source_example_rows_excluded,status,shadow_mode",
+      )
+      .eq("template_code", "LOCAL_BATCH_PAYMENT")
+      .eq("version", "LOCAL_BATCH_PAYMENT_V1")
+      .single(),
+    db
+      .from("bank_reference")
+      .select("id", { count: "exact", head: true }),
+    db
+      .from("country_currency_reference")
+      .select("id", { count: "exact", head: true }),
+    db
+      .from("payment_export_batches")
+      .select(
+        "id,file_name,order_count,total_payout_principal_vnd,estimated_gross_debit_vnd,status,submitted_to_upstream,shadow_mode,created_at",
+      )
+      .order("created_at", { ascending: false })
+      .limit(10),
+    db
+      .from("payment_block_reason_summary")
+      .select("code,order_count")
+      .order("order_count", { ascending: false })
+      .limit(5),
+    db
+      .from("payment_readiness_latest")
+      .select(
+        "id,payout_order_id,check_status,risk_level,blocking_codes,warning_codes,payout_principal_vnd,required_gross_debit_vnd,beneficiary_snapshot_masked,created_at",
+      )
+      .eq("check_status", "READY")
+      .order("created_at", { ascending: false })
+      .limit(500),
+  ]);
+  const error =
+    summaryError ??
+    checksError ??
+    templateError ??
+    bankError ??
+    countryError ??
+    exportError ??
+    blockReasonError ??
+    readyError;
+  if (error) throw error;
+
+  const payoutIds = [
+    ...new Set(
+      [...(checks ?? []), ...(readyChecks ?? [])].map(
+        (row) => row.payout_order_id,
+      ),
+    ),
+  ];
+  const { data: payouts, error: payoutError } = payoutIds.length
+    ? await db
+        .from("payout_orders")
+        .select(
+          "id,order_number,merchant_name,status,currency,payout_amount_vnd",
+        )
+        .in("id", payoutIds)
+    : { data: [], error: null };
+  if (payoutError) throw payoutError;
+  const payoutById = new Map(
+    (payouts ?? []).map((row) => [row.id, row]),
+  );
+
+  return {
+    summary: summary ?? [],
+    checks: (checks ?? []).map((check) => ({
+      ...check,
+      payout: payoutById.get(check.payout_order_id) ?? null,
+    })),
+    readyChecks: (readyChecks ?? []).map((check) => ({
+      ...check,
+      payout: payoutById.get(check.payout_order_id) ?? null,
+    })),
+    template,
+    bankCount: bankCount ?? 0,
+    countryCount: countryCount ?? 0,
+    exportBatches: exportBatches ?? [],
+    topBlockReasons: (blockReasons ?? []).map((row) => ({
+      code: row.code,
+      count: Number(row.order_count ?? 0),
+    })),
+  };
+}
+
 export async function getPoolSnapshot() {
   const db = serverClient();
   const [
