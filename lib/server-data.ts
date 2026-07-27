@@ -29,6 +29,9 @@ import {
   isRecommendationForOperatingDate,
   vndOperatingDate,
 } from "./business-rules";
+import {
+  operatingDateFromAccountCutoff,
+} from "./settlement-daily-report";
 import { normalizeSupabaseUrl } from "./supabase-url";
 
 export function serverClient() {
@@ -1162,6 +1165,157 @@ export async function getSettlementControlCenterData() {
     latestSnapshot,
     latestRiskReviews: riskReviews ?? [],
     learningHistory: learning.recommendations,
+    shadowMode: true,
+    automaticPayment: false,
+    automaticTopup: false,
+    automaticQuoteChange: false,
+    automaticMarketDataCollection: false,
+    automaticTrading: false,
+  };
+}
+
+export async function getSettlementDailyReportData() {
+  const db = serverClient();
+  const control = await getSettlementControlCenterData();
+  const operatingDate = operatingDateFromAccountCutoff(
+    control.current.dataCutoffs.accountHistoryLocal,
+  );
+
+  const activityQuery = operatingDate
+    ? db
+        .from("settlement_daily_account_activity")
+        .select(
+          "operating_date,account_event_count,payin_event_count,payout_event_count,today_payin_vnd,today_payout_vnd,net_funds_change_vnd,first_event_at,last_event_at,source_method",
+        )
+        .eq("operating_date", operatingDate)
+        .maybeSingle()
+    : Promise.resolve({ data: [], error: null });
+  const merchantQuery = operatingDate
+    ? db
+        .from("settlement_daily_merchant_profit_contributions")
+        .select(
+          "pricing_run_id,pricing_rules_version,pricing_run_time,profit_date,merchant_name,payout_count,merchant_principal_usdt,cash_profit_contribution_usdt,economic_profit_contribution_usdt",
+        )
+        .eq("profit_date", operatingDate)
+        .order("economic_profit_contribution_usdt", {
+          ascending: false,
+        })
+    : Promise.resolve({ data: [], error: null });
+
+  const [
+    { data: activityRows, error: activityError },
+    { data: merchantRows, error: merchantError },
+    { data: accuracy, error: accuracyError },
+    { data: validationQueue, error: validationError },
+    { data: savedReports, error: savedReportError },
+  ] = await Promise.all([
+    activityQuery,
+    merchantQuery,
+    db
+      .from("settlement_decision_accuracy_90d")
+      .select("*")
+      .eq("currency", "VND")
+      .maybeSingle(),
+    db
+      .from("settlement_decision_validation_queue")
+      .select(
+        "recommendation_id,currency,recommendation_time,system_recommended_topup_usdt,system_recommended_quote_rate,system_cash_profit_usdt,system_economic_profit_usdt,system_risk_alerts,human_decision_id,decision_scope,acceptance_status,final_topup_usdt,topup_adjustment_usdt,final_quote_rate,quote_adjustment,final_execution_decision,adjustment_reason,reviewed_at,latest_outcome_id,outcome_version,actual_topup_usdt,actual_quote_rate,actual_cash_profit_usdt,actual_economic_profit_usdt,actual_risk_outcomes,outcome_reason,measured_at,pending_outcome,shadow_mode,automatic_action",
+      )
+      .eq("currency", "VND")
+      .order("reviewed_at", { ascending: false })
+      .limit(50),
+    db
+      .from("settlement_daily_operation_snapshots")
+      .select(
+        "id,client_request_id,operating_date,snapshot_time,currency,gross_balance_vnd,settleable_balance_vnd,reserve_balance_vnd,today_payin_vnd,today_payout_vnd,net_funds_change_vnd,forecast_payout_vnd,forecast_payin_vnd,forecast_net_demand_vnd,peak_16_23_pressure_vnd,funding_shortfall_exists,projected_shortfall_vnd,topup_recommended,recommended_topup_usdt,recommended_topup_time,cash_profit_usdt,cash_profit_margin,economic_profit_usdt,economic_profit_margin,fx_opportunity_status,risk_alerts,data_cutoff_snapshot,data_completeness_status,rules_version,shadow_mode,created_at",
+      )
+      .eq("currency", "VND")
+      .order("operating_date", { ascending: false })
+      .order("snapshot_time", { ascending: false })
+      .limit(30),
+  ]);
+  const error =
+    activityError ??
+    merchantError ??
+    accuracyError ??
+    validationError ??
+    savedReportError;
+  if (error) throw error;
+
+  const activityRow = Array.isArray(activityRows)
+    ? activityRows[0]
+    : activityRows;
+  const activity = {
+    todayPayinVnd: String(activityRow?.today_payin_vnd ?? 0),
+    todayPayoutVnd: String(activityRow?.today_payout_vnd ?? 0),
+    netFundsChangeVnd: String(
+      activityRow?.net_funds_change_vnd ?? 0,
+    ),
+    eventCount: Number(activityRow?.account_event_count ?? 0),
+    payinEventCount: Number(activityRow?.payin_event_count ?? 0),
+    payoutEventCount: Number(activityRow?.payout_event_count ?? 0),
+    firstEventAt: activityRow?.first_event_at ?? null,
+    lastEventAt: activityRow?.last_event_at ?? null,
+    sourceMethod:
+      activityRow?.source_method ??
+      "ACCOUNT_HISTORY_GROSS_CHANGE",
+  };
+  const dailyProfit = operatingDate
+    ? control.current.profitMetrics.dailyHistory.find(
+        (row) => row.profit_date === operatingDate,
+      ) ?? null
+    : null;
+  const profit = dailyProfit
+    ? {
+        cashProfitUsdt: String(dailyProfit.cash_profit_usdt ?? 0),
+        cashProfitMargin:
+          dailyProfit.cash_profit_margin === null
+            ? null
+            : String(dailyProfit.cash_profit_margin),
+        economicProfitUsdt: String(
+          dailyProfit.economic_profit_usdt ?? 0,
+        ),
+        economicProfitMargin:
+          dailyProfit.economic_profit_margin === null
+            ? null
+            : String(dailyProfit.economic_profit_margin),
+        snapshot:
+          (dailyProfit.calculation_snapshot as Record<
+            string,
+            unknown
+          >) ?? {},
+        dataStatus: String(dailyProfit.profit_data_status),
+      }
+    : {
+        cashProfitUsdt: "0.000000000000",
+        cashProfitMargin: null,
+        economicProfitUsdt: "0.000000000000",
+        economicProfitMargin: null,
+        snapshot: {
+          bothMetricsRequired: true,
+          dataStatus: operatingDate
+            ? "NO_PROFIT_EVENTS_FOR_OPERATING_DATE"
+            : "NO_ACCOUNT_HISTORY",
+        },
+        dataStatus: operatingDate
+          ? "NO_PROFIT_EVENTS_FOR_OPERATING_DATE"
+          : "NO_ACCOUNT_HISTORY",
+      };
+
+  return {
+    operatingDate,
+    activity,
+    current: control.current,
+    profit,
+    merchantProfitContributions: merchantRows ?? [],
+    accuracy90d: accuracy,
+    validationQueue: validationQueue ?? [],
+    savedReports: savedReports ?? [],
+    latestSavedReport: savedReports?.[0] ?? null,
+    sourceControlSnapshotId: control.latestSnapshot?.id ?? null,
+    dataCompletenessStatus: operatingDate
+      ? ("PARTIAL_AFTER_ACCOUNT_HISTORY_CUTOFF" as const)
+      : ("NO_ACCOUNT_HISTORY" as const),
     shadowMode: true,
     automaticPayment: false,
     automaticTopup: false,
