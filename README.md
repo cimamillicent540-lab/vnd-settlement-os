@@ -44,6 +44,8 @@ Task 2.11 adds an immutable CEO daily settlement report at `/settlement-daily-re
 
 Task 2.12 adds `/shadow-run-dashboard` as a read-only observation layer over the existing learning, control-center, business-rule, and daily-report evidence. It reports daily recommendation/decision counts and acceptance rates, compares system suggestions with reasoned human outcomes, derives descriptive accuracy and daily-review summaries, and stores immutable human market-context notes. Market notes never affect quotes or trigger financial actions.
 
+Task 2.13 adds `/daily-operation` as the manual daily settlement workflow. It appends immutable 11:00 decision, 16:00 risk-check, and 23:00 review checkpoints, keeps Binance P2P, upstream, and XE observations manual, and links the final reasoned human decision plus Cash/Economic Profit back into the existing 90-day learning records. Every checkpoint remains advisory and cannot pay, top up, change a quote, collect market data, or trade.
+
 To verify or import the approved reference appendices:
 
 ```bash

@@ -1518,3 +1518,117 @@ export async function getShadowRunDashboardData() {
     automaticTrading: false,
   };
 }
+
+export async function getDailyOperationData() {
+  const db = serverClient();
+  const operatingDate = shanghaiDate();
+  const [report, workflow] = await Promise.all([
+    getSettlementDailyReportData(),
+    Promise.all([
+      db
+        .from("daily_operation_decision_snapshots")
+        .select(
+          "id,client_request_id,operating_date,checkpoint_type,scheduled_local_time,captured_at,capture_status,currency,source_learning_recommendation_id,source_control_snapshot_id,gross_balance_vnd,settleable_balance_vnd,reserve_balance_vnd,available_funds_ratio,settleable_ratio,safety_buffer_ratio,forecast_payin_vnd,forecast_payout_vnd,forecast_net_demand_vnd,peak_16_23_pressure_vnd,required_settleable_with_buffer_vnd,projected_shortfall_vnd,required_gross_topup_vnd,topup_recommended,recommended_topup_usdt,recommended_coverage_time,topup_reasons,binance_p2p_rate,upstream_quote_rate,xe_rate,best_vnd_source_rate,fx_opportunity_spread_vnd_per_usdt,fx_opportunity_spread_ratio,fx_opportunity_status,arbitrage_space_exists,fx_observation_snapshot,data_cutoff_snapshot,rules_version,shadow_mode,created_at",
+        )
+        .eq("currency", "VND")
+        .order("operating_date", { ascending: false })
+        .order("captured_at", { ascending: false })
+        .limit(30),
+      db
+        .from("daily_operation_risk_checks")
+        .select(
+          "id,client_request_id,operating_date,checkpoint_type,scheduled_local_time,captured_at,capture_status,currency,day_decision_snapshot_id,settleable_balance_vnd,projected_shortfall_vnd,maximum_hourly_payout_concentration,economic_profit_margin,fx_spread_ratio,payout_concentration_risk,settleable_insufficient_risk,profit_below_0_2_percent_risk,fx_anomaly_risk,international_market_risk,risk_score,risk_level,risk_alerts,international_market_notes,data_cutoff_snapshot,rules_version,shadow_mode,created_at",
+        )
+        .eq("currency", "VND")
+        .order("operating_date", { ascending: false })
+        .order("captured_at", { ascending: false })
+        .limit(30),
+      db
+        .from("daily_operation_end_reviews")
+        .select(
+          "id,client_request_id,operating_date,checkpoint_type,scheduled_local_time,captured_at,capture_status,currency,day_decision_snapshot_id,risk_check_id,source_daily_report_snapshot_id,source_learning_recommendation_id,human_decision_id,reason_classification_id,decision_outcome_id,cash_profit_usdt,economic_profit_usdt,system_recommendations_snapshot,human_final_decision_snapshot,acceptance_status,adjustment_reason_category,adjustment_reason,final_topup_usdt,final_quote_rate,final_execution_decision,risk_feedback_snapshot,learning_record_snapshot,data_cutoff_snapshot,learning_window_days,rules_version,shadow_mode,actual_execution_performed,created_at",
+        )
+        .eq("currency", "VND")
+        .order("operating_date", { ascending: false })
+        .order("captured_at", { ascending: false })
+        .limit(30),
+      db
+        .from("daily_operation_workflow_status")
+        .select("*")
+        .eq("currency", "VND")
+        .order("operating_date", { ascending: false })
+        .limit(30),
+      db
+        .from("shadow_run_market_context_notes")
+        .select(
+          "id,context_date,observed_at,context_category,severity,title,observation_reason",
+        )
+        .eq("currency", "VND")
+        .eq("context_date", operatingDate)
+        .order("observed_at", { ascending: false }),
+    ]),
+  ]);
+
+  const [
+    { data: dayDecisions, error: dayError },
+    { data: riskChecks, error: riskError },
+    { data: endReviews, error: endError },
+    { data: workflowRows, error: workflowError },
+    { data: marketNotes, error: notesError },
+  ] = workflow;
+  const error =
+    dayError ??
+    riskError ??
+    endError ??
+    workflowError ??
+    notesError;
+  if (error) throw error;
+
+  const todayDayDecision =
+    dayDecisions?.find(
+      (snapshot) => snapshot.operating_date === operatingDate,
+    ) ?? null;
+  const todayRiskCheck =
+    riskChecks?.find(
+      (riskCheck) => riskCheck.operating_date === operatingDate,
+    ) ?? null;
+  const todayEndReview =
+    endReviews?.find(
+      (review) => review.operating_date === operatingDate,
+    ) ?? null;
+  const { data: todayRecommendation, error: recommendationError } =
+    todayDayDecision
+      ? await db
+          .from("settlement_learning_recommendations")
+          .select(
+            "id,recommendation_time,system_topup_recommended,system_recommended_topup_usdt,system_recommended_quote_rate,system_target_margin,system_risk_alerts,system_cash_profit_usdt,system_economic_profit_usdt,system_fx_judgment,system_payload,data_cutoff_snapshot,model_version,shadow_mode",
+          )
+          .eq(
+            "id",
+            todayDayDecision.source_learning_recommendation_id,
+          )
+          .maybeSingle()
+      : { data: null, error: null };
+  if (recommendationError) throw recommendationError;
+
+  return {
+    operatingDate,
+    report,
+    current: report.current,
+    dayDecisions: dayDecisions ?? [],
+    riskChecks: riskChecks ?? [],
+    endReviews: endReviews ?? [],
+    workflowHistory: workflowRows ?? [],
+    marketNotes: marketNotes ?? [],
+    todayDayDecision,
+    todayRiskCheck,
+    todayEndReview,
+    todayRecommendation,
+    shadowMode: true,
+    automaticPayment: false,
+    automaticTopup: false,
+    automaticQuoteChange: false,
+    automaticMarketDataCollection: false,
+    automaticTrading: false,
+  };
+}
