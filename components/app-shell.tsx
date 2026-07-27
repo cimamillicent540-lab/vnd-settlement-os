@@ -1,7 +1,7 @@
 "use client";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
-import { Activity, Bell, BrainCircuit, BriefcaseBusiness, Calculator, ChevronDown, CircleHelp, Database, FileInput, FileSpreadsheet, Gauge, PanelLeft, Scale, SearchCheck, ShieldCheck } from "lucide-react";
+import { Activity, Bell, BrainCircuit, BriefcaseBusiness, Calculator, ChevronDown, CircleHelp, Database, FileInput, FileSpreadsheet, Gauge, LayoutDashboard, PanelLeft, Scale, SearchCheck, ShieldCheck } from "lucide-react";
 import { cn } from "@/lib/utils";
 
 const nav = [
@@ -15,8 +15,9 @@ const nav = [
   { href:"/payment-export", label:"付款准备", icon:FileSpreadsheet },
   { href:"/settlement-intelligence", label:"结算智能决策", icon:Activity },
   { href:"/settlement-learning", label:"人工反馈学习", icon:BrainCircuit },
+  { href:"/settlement-control-center", label:"运营控制中心", icon:LayoutDashboard },
 ];
-const titles:Record<string,string> = { "/pool":"VND 资金池", "/imports":"数据导入中心", "/topups":"补U批次", "/data-quality":"数据质量与审计", "/reconciliation":"真实数据对账", "/shadow-pricing":"影子报价", "/portfolio":"组合回测", "/payment-export":"付款准备与风险检查", "/settlement-intelligence":"VND结算智能决策", "/settlement-learning":"结算学习与人工反馈" };
+const titles:Record<string,string> = { "/pool":"VND 资金池", "/imports":"数据导入中心", "/topups":"补U批次", "/data-quality":"数据质量与审计", "/reconciliation":"真实数据对账", "/shadow-pricing":"影子报价", "/portfolio":"组合回测", "/payment-export":"付款准备与风险检查", "/settlement-intelligence":"VND结算智能决策", "/settlement-learning":"结算学习与人工反馈", "/settlement-control-center":"VND结算运营控制中心" };
 
 export function AppShell({ children }:{ children:React.ReactNode }) {
   const pathname = usePathname();

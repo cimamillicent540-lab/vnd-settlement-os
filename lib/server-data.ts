@@ -15,6 +15,15 @@ import {
   type HourlyLiquidityRow,
   type VndInventoryBatch,
 } from "./settlement-intelligence";
+import {
+  buildControlCenterRisks,
+  buildTopupControl,
+  calculateDailyPressure,
+  classifyFundsStatus,
+  recommendMerchantQuotes,
+  summarizeExecutionGuard,
+  type MerchantBaseline,
+} from "./settlement-control-center";
 import { normalizeSupabaseUrl } from "./supabase-url";
 
 export function serverClient() {
@@ -924,6 +933,199 @@ export async function getSettlementLearningData() {
     automaticPayment: false,
     automaticTopup: false,
     automaticQuoteChange: false,
+    automaticTrading: false,
+  };
+}
+
+export async function getSettlementControlCenterData() {
+  const db = serverClient();
+  const [
+    intelligence,
+    learning,
+    { data: merchantRows, error: merchantError },
+    { data: readinessRows, error: readinessError },
+    { data: savedSnapshots, error: snapshotError },
+  ] = await Promise.all([
+    getSettlementIntelligenceData(),
+    getSettlementLearningData(),
+    db
+      .from("settlement_control_center_merchant_baseline")
+      .select(
+        "merchant_name,payout_count,channel_count,transaction_volume_usdt,contribution_usdt,current_quote_rate,current_profit_margin,merchant_fee_rate,source_rules_version,source_run_time",
+      )
+      .order("transaction_volume_usdt", { ascending: false }),
+    db
+      .from("payment_readiness_summary")
+      .select(
+        "check_status,risk_level,order_count,payout_principal_vnd,required_gross_debit_vnd",
+      )
+      .order("check_status")
+      .order("risk_level"),
+    db
+      .from("settlement_control_center_snapshots")
+      .select(
+        "id,snapshot_date,as_of,currency,gross_balance_vnd,settleable_balance_vnd,reserve_balance_vnd,available_funds_ratio,funds_risk_status,forecast_payout_vnd,forecast_payin_vnd,forecast_net_demand_vnd,peak_pressure_vnd,learning_adjustment_vnd,topup_recommended,recommended_topup_usdt,recommended_topup_time,topup_reasons,topup_objectives,inventory_vnd,projected_inventory_vnd,maximum_inventory_vnd,inventory_limit_status,manual_inventory_confirmation_required,execution_ready_count,execution_blocked_count,execution_warning_count,execution_guard_snapshot,xe_rate,p2p_cost_rate,company_quote_rate,fx_spread_vnd_per_usdt,fx_opportunity_status,merchant_quote_recommendations,risk_alerts,learning_90d_snapshot,data_cutoff_snapshot,rules_version,shadow_mode,created_at",
+      )
+      .eq("currency", "VND")
+      .order("as_of", { ascending: false })
+      .order("id", { ascending: false })
+      .limit(10),
+  ]);
+  const firstError =
+    merchantError ?? readinessError ?? snapshotError;
+  if (firstError) throw firstError;
+
+  const merchantBaselines: MerchantBaseline[] = (
+    merchantRows ?? []
+  ).map((row) => ({
+    merchantName: String(row.merchant_name),
+    transactionVolumeUsdt: String(
+      row.transaction_volume_usdt ?? 0,
+    ),
+    contributionUsdt: String(row.contribution_usdt ?? 0),
+    currentQuoteRate:
+      row.current_quote_rate === null
+        ? null
+        : String(row.current_quote_rate),
+    currentProfitMargin:
+      row.current_profit_margin === null
+        ? null
+        : String(row.current_profit_margin),
+    payoutCount: Number(row.payout_count ?? 0),
+    channelCount: Number(row.channel_count ?? 0),
+  }));
+  const learningSummary = learning.summary;
+  const pressure = calculateDailyPressure(intelligence.hourly, {
+    averageSystemTopupUsdt:
+      learningSummary?.average_system_topup_usdt ?? null,
+    averageHumanTopupUsdt:
+      learningSummary?.average_human_topup_usdt ?? null,
+    p2pCostRate:
+      intelligence.fxIntelligence?.p2pCostRate ?? null,
+  });
+  const funds = classifyFundsStatus({
+    grossBalanceVnd: intelligence.balances.grossBalanceVnd,
+    settleableBalanceVnd:
+      intelligence.balances.settleableBalanceVnd,
+    forecastNetDemandVnd: pressure.forecastNetDemandVnd,
+    peakPressureVnd: pressure.peakPressureVnd,
+  });
+  const currentInventoryVnd = (
+    intelligence.inventoryRows ?? []
+  ).reduce(
+    (sum, row) => sum + Number(row.remaining_amount ?? 0),
+    0,
+  );
+  const fxOpportunityStatus:
+    | "BUY_VND_OPPORTUNITY"
+    | "NORMAL"
+    | "RISK"
+    | "WAITING_INPUT" =
+    intelligence.fxIntelligence?.opportunity ===
+      "BUY_VND_OPPORTUNITY" ||
+    intelligence.fxIntelligence?.opportunity === "NORMAL" ||
+    intelligence.fxIntelligence?.opportunity === "RISK"
+      ? intelligence.fxIntelligence.opportunity
+      : ("WAITING_INPUT" as const);
+  const topup = buildTopupControl({
+    settleableBalanceVnd:
+      intelligence.balances.settleableBalanceVnd,
+    forecastNetDemandVnd: pressure.forecastNetDemandVnd,
+    peakPressureVnd: pressure.peakPressureVnd,
+    currentInventoryVnd,
+    p2pCostRate:
+      intelligence.fxIntelligence?.p2pCostRate ?? null,
+    fxOpportunityStatus,
+    weightedInventoryRate:
+      intelligence.fifoForecast.weightedCostRate,
+    fundsRiskStatus: funds.status,
+  });
+  const merchants = recommendMerchantQuotes({
+    merchants: merchantBaselines,
+    globalRecommendedQuoteRate:
+      intelligence.quoteRecommendation?.recommendedQuoteRate ??
+      null,
+    p2pCostRate:
+      intelligence.fxIntelligence?.p2pCostRate ?? null,
+    targetMargin: intelligence.marginRecommendation.targetMargin,
+  });
+  const executionGuard = summarizeExecutionGuard(
+    (readinessRows ?? []).map((row) => ({
+      checkStatus: String(row.check_status),
+      riskLevel: String(row.risk_level),
+      orderCount: Number(row.order_count ?? 0),
+      payoutPrincipalVnd: String(row.payout_principal_vnd ?? 0),
+      requiredGrossDebitVnd: String(
+        row.required_gross_debit_vnd ?? 0,
+      ),
+    })),
+  );
+  const risks = buildControlCenterRisks({
+    fundsRiskStatus: funds.status,
+    maximumHourlyPayoutConcentration:
+      pressure.maximumHourlyPayoutConcentration,
+    merchantRecommendations: merchants,
+    fxOpportunityStatus,
+    inventoryManualConfirmationRequired:
+      topup.manualConfirmationRequired,
+    executionGuardStatus: executionGuard.status,
+    executionBlockedCount: executionGuard.blockedCount,
+    intelligenceRisks: intelligence.riskAlerts,
+  });
+  const latestSnapshot = savedSnapshots?.[0] ?? null;
+  const { data: riskReviews, error: reviewError } = latestSnapshot
+    ? await db
+        .from("settlement_control_center_latest_risk_reviews")
+        .select(
+          "id,control_snapshot_id,risk_code,review_version,supersedes_review_id,human_judgment,human_note,reviewed_by,reviewed_at,shadow_mode,automatic_action",
+        )
+        .eq("control_snapshot_id", latestSnapshot.id)
+        .order("risk_code")
+    : { data: [], error: null };
+  if (reviewError) throw reviewError;
+
+  return {
+    current: {
+      balances: intelligence.balances,
+      funds,
+      pressure,
+      topup,
+      fx: {
+        xeRate: intelligence.fxIntelligence?.xeRate ?? null,
+        p2pCostRate:
+          intelligence.fxIntelligence?.p2pCostRate ?? null,
+        companyQuoteRate:
+          intelligence.quoteRecommendation?.recommendedQuoteRate ??
+          null,
+        spreadVndPerUsdt:
+          intelligence.fxIntelligence?.spreadVndPerUsdt ?? null,
+        opportunityStatus: fxOpportunityStatus,
+      },
+      merchants,
+      executionGuard,
+      risks,
+      learning90d: learningSummary,
+      sourceLearningRecommendationId:
+        learning.recommendations[0]?.id ?? null,
+      dataCutoffs: {
+        ...intelligence.dataCutoffs,
+        latestLearningRecommendation:
+          learning.recommendations[0]?.recommendation_time ?? null,
+        shadowPricingRun:
+          merchantRows?.[0]?.source_run_time ?? null,
+        shadowPricingRules:
+          merchantRows?.[0]?.source_rules_version ?? null,
+      },
+    },
+    savedSnapshots: savedSnapshots ?? [],
+    latestSnapshot,
+    latestRiskReviews: riskReviews ?? [],
+    learningHistory: learning.recommendations,
+    shadowMode: true,
+    automaticPayment: false,
+    automaticTopup: false,
+    automaticQuoteChange: false,
+    automaticMarketDataCollection: false,
     automaticTrading: false,
   };
 }
