@@ -1,7 +1,7 @@
 "use client";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
-import { Activity, Bell, BookLock, BrainCircuit, BriefcaseBusiness, Calculator, CalendarClock, CalendarDays, ChevronDown, CircleHelp, Database, FileInput, FileSpreadsheet, Gauge, LayoutDashboard, MonitorCheck, Newspaper, PanelLeft, Scale, SearchCheck } from "lucide-react";
+import { Activity, Bell, BookLock, BrainCircuit, BriefcaseBusiness, Calculator, CalendarClock, CalendarDays, ChevronDown, CircleHelp, CircleGauge, Database, FileInput, FileSpreadsheet, Gauge, LayoutDashboard, MonitorCheck, Newspaper, PanelLeft, Scale, SearchCheck } from "lucide-react";
 import { cn } from "@/lib/utils";
 
 const nav = [
@@ -20,8 +20,9 @@ const nav = [
   { href:"/shadow-run-dashboard", label:"Shadow Run观察", icon:MonitorCheck },
   { href:"/daily-operation", label:"每日运营工作流", icon:CalendarClock },
   { href:"/shadow-validation", label:"7天Shadow验证", icon:CalendarDays },
+  { href:"/ai-decision-score", label:"AI决策评分", icon:CircleGauge },
 ];
-const titles:Record<string,string> = { "/pool":"VND 资金池", "/imports":"数据导入中心", "/topups":"补U批次", "/data-quality":"数据质量与审计", "/reconciliation":"真实数据对账", "/shadow-pricing":"影子报价", "/portfolio":"组合回测", "/payment-export":"付款准备与风险检查", "/settlement-intelligence":"VND结算智能决策", "/settlement-learning":"结算学习与人工反馈", "/settlement-control-center":"VND结算运营控制中心", "/settlement-daily-report":"CEO结算日报", "/shadow-run-dashboard":"Shadow Run观察层", "/daily-operation":"VND每日结算运营工作流", "/shadow-validation":"VND 7天Shadow验证", "/business-rules":"VND结算业务规则冻结" };
+const titles:Record<string,string> = { "/pool":"VND 资金池", "/imports":"数据导入中心", "/topups":"补U批次", "/data-quality":"数据质量与审计", "/reconciliation":"真实数据对账", "/shadow-pricing":"影子报价", "/portfolio":"组合回测", "/payment-export":"付款准备与风险检查", "/settlement-intelligence":"VND结算智能决策", "/settlement-learning":"结算学习与人工反馈", "/settlement-control-center":"VND结算运营控制中心", "/settlement-daily-report":"CEO结算日报", "/shadow-run-dashboard":"Shadow Run观察层", "/daily-operation":"VND每日结算运营工作流", "/shadow-validation":"VND 7天Shadow验证", "/ai-decision-score":"VND AI决策评分", "/business-rules":"VND结算业务规则冻结" };
 
 export function AppShell({ children }:{ children:React.ReactNode }) {
   const pathname = usePathname();

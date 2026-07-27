@@ -32,6 +32,7 @@ import {
 import {
   operatingDateFromAccountCutoff,
 } from "./settlement-daily-report";
+import { AI_DECISION_SCORE_RULES } from "./ai-decision-score";
 import { shanghaiDate } from "./shadow-run-dashboard";
 import { normalizeSupabaseUrl } from "./supabase-url";
 
@@ -1756,6 +1757,79 @@ export async function getShadowValidationData() {
     selectedPeriod,
     dailyRecords: selectedDailyRecords,
     eligibleEndReviews: eligibleDays,
+    shadowMode: true,
+    descriptiveStatisticsOnly: true,
+    automaticPayment: false,
+    automaticTopup: false,
+    automaticQuoteChange: false,
+    automaticTrading: false,
+    automaticOptimization: false,
+  };
+}
+
+export async function getAiDecisionScoreData() {
+  const db = serverClient();
+  const [
+    { data: summaryRows, error: summaryError },
+    { data: recentScores, error: scoresError },
+    { data: validationRecords, error: validationError },
+  ] = await Promise.all([
+    db
+      .from("ai_decision_score_summary")
+      .select("*")
+      .eq(
+        "model_version",
+        AI_DECISION_SCORE_RULES.modelVersion,
+      )
+      .maybeSingle(),
+    db
+      .from("ai_decision_score_latest")
+      .select(
+        "id,validation_record_id,period_id,score_date,score_version,model_version,topup_absolute_deviation_usdt,topup_reference_cost_difference_vnd,topup_cost_evidence_status,fx_opportunity_loss_usdt,topup_decision_score,quote_absolute_deviation,quote_profit_difference_usdt,merchant_competition_concern,merchant_competition_impact_ratio,transaction_risk_rate,quote_decision_score,cash_profit_absolute_error_usdt,economic_profit_absolute_error_usdt,profit_prediction_score,system_risk_level,actual_risk_level,risk_true_positive_count,risk_false_positive_count,risk_false_negative_count,risk_hit_rate,risk_false_positive_rate,risk_miss_rate,risk_score,evaluation_status,ai_decision_score,created_at",
+      )
+      .eq(
+        "model_version",
+        AI_DECISION_SCORE_RULES.modelVersion,
+      )
+      .order("score_date", { ascending: false })
+      .order("score_version", { ascending: false })
+      .limit(90),
+    db
+      .from("shadow_validation_daily_records")
+      .select(
+        "id,period_id,validation_date,day_number,ai_accuracy_score,created_at",
+      )
+      .eq("currency", "VND")
+      .order("validation_date", { ascending: false })
+      .limit(90),
+  ]);
+  const error = summaryError ?? scoresError ?? validationError;
+  if (error) throw error;
+
+  const scoredValidationIds = new Set(
+    (recentScores ?? []).map(
+      (score) => score.validation_record_id,
+    ),
+  );
+  const eligibleRecords = (validationRecords ?? [])
+    .filter((record) => !scoredValidationIds.has(record.id))
+    .slice(0, 7);
+  const recentDates = [
+    ...new Set(
+      (recentScores ?? []).map((score) => score.score_date),
+    ),
+  ].slice(0, 7);
+  const recentDateSet = new Set(recentDates);
+  const recentSevenScores = (recentScores ?? [])
+    .filter((score) => recentDateSet.has(score.score_date))
+    .reverse();
+
+  return {
+    modelVersion: AI_DECISION_SCORE_RULES.modelVersion,
+    overallWeights: AI_DECISION_SCORE_RULES.overallWeights,
+    summary: summaryRows ?? null,
+    recentScores: recentSevenScores,
+    eligibleRecords,
     shadowMode: true,
     descriptiveStatisticsOnly: true,
     automaticPayment: false,

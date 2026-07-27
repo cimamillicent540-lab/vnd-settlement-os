@@ -48,6 +48,8 @@ Task 2.13 adds `/daily-operation` as the manual daily settlement workflow. It ap
 
 Task 2.14 adds `/shadow-validation` for a manually started seven-day validation period. Each completed day links the existing AI recommendation, categorized human decision, 23:00 review, and a new versioned actual outcome; it then preserves topup accuracy, quote adoption, dual-profit error, FX gain evidence, funding pressure, risk accuracy, and an overall descriptive AI Accuracy Score. Periods and daily records are immutable and never optimize or execute actions.
 
+Task 2.15 adds `/ai-decision-score` as a versioned scoring layer over completed Task 2.14 days. It separately evaluates topup quantity/reference cost/FX opportunity, quote profit/competition/transaction risk, dual-profit forecast error, and risk hits/false positives/misses, then applies the frozen 30%/30%/25%/15% overall weighting. Missing evidence stays explicit and no score can trigger or optimize a financial action.
+
 To verify or import the approved reference appendices:
 
 ```bash
