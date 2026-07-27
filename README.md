@@ -46,6 +46,8 @@ Task 2.12 adds `/shadow-run-dashboard` as a read-only observation layer over the
 
 Task 2.13 adds `/daily-operation` as the manual daily settlement workflow. It appends immutable 11:00 decision, 16:00 risk-check, and 23:00 review checkpoints, keeps Binance P2P, upstream, and XE observations manual, and links the final reasoned human decision plus Cash/Economic Profit back into the existing 90-day learning records. Every checkpoint remains advisory and cannot pay, top up, change a quote, collect market data, or trade.
 
+Task 2.14 adds `/shadow-validation` for a manually started seven-day validation period. Each completed day links the existing AI recommendation, categorized human decision, 23:00 review, and a new versioned actual outcome; it then preserves topup accuracy, quote adoption, dual-profit error, FX gain evidence, funding pressure, risk accuracy, and an overall descriptive AI Accuracy Score. Periods and daily records are immutable and never optimize or execute actions.
+
 To verify or import the approved reference appendices:
 
 ```bash

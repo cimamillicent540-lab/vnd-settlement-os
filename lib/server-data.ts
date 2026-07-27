@@ -1632,3 +1632,136 @@ export async function getDailyOperationData() {
     automaticTrading: false,
   };
 }
+
+export async function getShadowValidationData() {
+  const db = serverClient();
+  const today = shanghaiDate();
+  const [
+    { data: periods, error: periodError },
+    { data: dailyRecords, error: dailyError },
+    { data: endReviews, error: reviewError },
+  ] = await Promise.all([
+    db
+      .from("shadow_validation_period_status")
+      .select("*")
+      .eq("currency", "VND")
+      .order("start_date", { ascending: false })
+      .limit(20),
+    db
+      .from("shadow_validation_daily_comparisons")
+      .select("*")
+      .eq("currency", "VND")
+      .order("validation_date", { ascending: false })
+      .order("day_number", { ascending: false })
+      .limit(140),
+    db
+      .from("daily_operation_end_reviews")
+      .select(
+        "id,operating_date,captured_at,source_learning_recommendation_id,human_decision_id,reason_classification_id,cash_profit_usdt,economic_profit_usdt,acceptance_status,adjustment_reason_category,adjustment_reason,final_topup_usdt,final_quote_rate,risk_check_id,data_cutoff_snapshot,shadow_mode,actual_execution_performed",
+      )
+      .eq("currency", "VND")
+      .order("operating_date", { ascending: false })
+      .limit(90),
+  ]);
+  const error = periodError ?? dailyError ?? reviewError;
+  if (error) throw error;
+
+  const activePeriod =
+    periods?.find(
+      (period) =>
+        period.start_date <= today &&
+        period.end_date >= today &&
+        period.period_status !== "COMPLETED",
+    ) ?? null;
+  const selectedPeriod = activePeriod ?? periods?.[0] ?? null;
+  const selectedDailyRecords = selectedPeriod
+    ? (dailyRecords ?? []).filter(
+        (record) => record.period_id === selectedPeriod.period_id,
+      )
+    : [];
+  const capturedEndReviewIds = new Set(
+    selectedDailyRecords.map(
+      (record) => record.source_end_review_id,
+    ),
+  );
+  const eligibleEndReviews = selectedPeriod
+    ? (endReviews ?? []).filter(
+        (review) =>
+          review.operating_date >= selectedPeriod.start_date &&
+          review.operating_date <= selectedPeriod.end_date &&
+          !capturedEndReviewIds.has(review.id),
+      )
+    : [];
+  const recommendationIds = [
+    ...new Set(
+      eligibleEndReviews.map(
+        (review) => review.source_learning_recommendation_id,
+      ),
+    ),
+  ];
+  const riskCheckIds = [
+    ...new Set(
+      eligibleEndReviews.map((review) => review.risk_check_id),
+    ),
+  ];
+  const [
+    { data: recommendations, error: recommendationError },
+    { data: riskChecks, error: riskCheckError },
+  ] =
+    recommendationIds.length > 0
+      ? await Promise.all([
+          db
+            .from("settlement_learning_recommendations")
+            .select(
+              "id,system_topup_recommended,system_recommended_topup_usdt,system_recommended_quote_rate,system_cash_profit_usdt,system_economic_profit_usdt,system_fx_spread_ratio,system_risk_alerts,system_fx_judgment,shadow_mode",
+            )
+            .in("id", recommendationIds),
+          db
+            .from("daily_operation_risk_checks")
+            .select("id,risk_level,risk_score,shadow_mode")
+            .in("id", riskCheckIds),
+        ])
+      : [
+          { data: [], error: null },
+          { data: [], error: null },
+        ];
+  if (recommendationError || riskCheckError) {
+    throw recommendationError ?? riskCheckError;
+  }
+  const recommendationById = new Map(
+    (recommendations ?? []).map((recommendation) => [
+      recommendation.id,
+      recommendation,
+    ]),
+  );
+  const riskCheckById = new Map(
+    (riskChecks ?? []).map((riskCheck) => [
+      riskCheck.id,
+      riskCheck,
+    ]),
+  );
+  const eligibleDays = eligibleEndReviews.map((review) => ({
+    ...review,
+    recommendation:
+      recommendationById.get(
+        review.source_learning_recommendation_id,
+      ) ?? null,
+    riskCheck: riskCheckById.get(review.risk_check_id) ?? null,
+  }));
+
+  return {
+    today,
+    periods: periods ?? [],
+    activePeriod,
+    selectedPeriod,
+    dailyRecords: selectedDailyRecords,
+    eligibleEndReviews: eligibleDays,
+    shadowMode: true,
+    descriptiveStatisticsOnly: true,
+    automaticPayment: false,
+    automaticTopup: false,
+    automaticQuoteChange: false,
+    automaticTrading: false,
+    automaticOptimization: false,
+  };
+}
