@@ -42,6 +42,8 @@ The daily operating view always presents Cash Profit and Economic Profit togethe
 
 Task 2.11 adds an immutable CEO daily settlement report at `/settlement-daily-report`. It freezes the latest available Account History operating day, balances, actual daily flows, 16:00–23:00 pressure, topup advice, dual profit, merchant contribution, FX and risks. Human-observed outcomes are appended as versions and produce descriptive 90-day topup, quote, profit and risk accuracy statistics; they never optimize or execute decisions automatically.
 
+Task 2.12 adds `/shadow-run-dashboard` as a read-only observation layer over the existing learning, control-center, business-rule, and daily-report evidence. It reports daily recommendation/decision counts and acceptance rates, compares system suggestions with reasoned human outcomes, derives descriptive accuracy and daily-review summaries, and stores immutable human market-context notes. Market notes never affect quotes or trigger financial actions.
+
 To verify or import the approved reference appendices:
 
 ```bash

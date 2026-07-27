@@ -1,7 +1,7 @@
 "use client";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
-import { Activity, Bell, BookLock, BrainCircuit, BriefcaseBusiness, Calculator, ChevronDown, CircleHelp, Database, FileInput, FileSpreadsheet, Gauge, LayoutDashboard, Newspaper, PanelLeft, Scale, SearchCheck } from "lucide-react";
+import { Activity, Bell, BookLock, BrainCircuit, BriefcaseBusiness, Calculator, ChevronDown, CircleHelp, Database, FileInput, FileSpreadsheet, Gauge, LayoutDashboard, MonitorCheck, Newspaper, PanelLeft, Scale, SearchCheck } from "lucide-react";
 import { cn } from "@/lib/utils";
 
 const nav = [
@@ -17,8 +17,9 @@ const nav = [
   { href:"/settlement-learning", label:"人工反馈学习", icon:BrainCircuit },
   { href:"/settlement-control-center", label:"运营控制中心", icon:LayoutDashboard },
   { href:"/settlement-daily-report", label:"CEO结算日报", icon:Newspaper },
+  { href:"/shadow-run-dashboard", label:"Shadow Run观察", icon:MonitorCheck },
 ];
-const titles:Record<string,string> = { "/pool":"VND 资金池", "/imports":"数据导入中心", "/topups":"补U批次", "/data-quality":"数据质量与审计", "/reconciliation":"真实数据对账", "/shadow-pricing":"影子报价", "/portfolio":"组合回测", "/payment-export":"付款准备与风险检查", "/settlement-intelligence":"VND结算智能决策", "/settlement-learning":"结算学习与人工反馈", "/settlement-control-center":"VND结算运营控制中心", "/settlement-daily-report":"CEO结算日报", "/business-rules":"VND结算业务规则冻结" };
+const titles:Record<string,string> = { "/pool":"VND 资金池", "/imports":"数据导入中心", "/topups":"补U批次", "/data-quality":"数据质量与审计", "/reconciliation":"真实数据对账", "/shadow-pricing":"影子报价", "/portfolio":"组合回测", "/payment-export":"付款准备与风险检查", "/settlement-intelligence":"VND结算智能决策", "/settlement-learning":"结算学习与人工反馈", "/settlement-control-center":"VND结算运营控制中心", "/settlement-daily-report":"CEO结算日报", "/shadow-run-dashboard":"Shadow Run观察层", "/business-rules":"VND结算业务规则冻结" };
 
 export function AppShell({ children }:{ children:React.ReactNode }) {
   const pathname = usePathname();

@@ -4,6 +4,7 @@ import { z } from "zod";
 import { authorizeInternalRequest } from "@/lib/api-auth";
 import { buildDailyOperationSnapshotRecord } from "@/lib/settlement-daily-report";
 import { getSettlementDailyReportData } from "@/lib/server-data";
+import { fundingPressureImproved } from "@/lib/shadow-run-dashboard";
 
 const unsignedDecimal = z
   .string()
@@ -28,6 +29,8 @@ const payloadSchema = z.discriminatedUnion("kind", [
     actualQuoteRate: unsignedDecimal,
     actualCashProfitUsdt: signedDecimal,
     actualEconomicProfitUsdt: signedDecimal,
+    fundingPressureBeforeVnd: unsignedDecimal,
+    fundingPressureAfterVnd: unsignedDecimal,
     actualRiskOutcomes: z
       .array(
         z.object({
@@ -150,6 +153,16 @@ export async function POST(request: Request) {
     });
   }
 
+  if (
+    (parsed.data.fundingPressureBeforeVnd === null) !==
+    (parsed.data.fundingPressureAfterVnd === null)
+  ) {
+    return NextResponse.json(
+      { message: "资金压力前后值必须同时填写" },
+      { status: 400 },
+    );
+  }
+
   const { data, error } = await auth.db.rpc(
     "record_settlement_decision_outcome_v1",
     {
@@ -168,6 +181,15 @@ export async function POST(request: Request) {
         source: "HUMAN_OBSERVED_OUTCOME",
         descriptiveStatisticsOnly: true,
         automaticOptimization: false,
+        fundingPressureBeforeVnd:
+          parsed.data.fundingPressureBeforeVnd,
+        fundingPressureAfterVnd:
+          parsed.data.fundingPressureAfterVnd,
+        fundingPressureImproved:
+          fundingPressureImproved(
+            parsed.data.fundingPressureBeforeVnd,
+            parsed.data.fundingPressureAfterVnd,
+          ),
       },
       p_data_cutoff_snapshot: {
         recordedAt: new Date().toISOString(),

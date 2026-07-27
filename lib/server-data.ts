@@ -32,6 +32,7 @@ import {
 import {
   operatingDateFromAccountCutoff,
 } from "./settlement-daily-report";
+import { shanghaiDate } from "./shadow-run-dashboard";
 import { normalizeSupabaseUrl } from "./supabase-url";
 
 export function serverClient() {
@@ -1382,6 +1383,135 @@ export async function getBusinessRulesFreezeData() {
     latestTodayRecommendation:
       todayRecommendations[0] ?? null,
     shadowMode: true,
+    automaticPayment: false,
+    automaticTopup: false,
+    automaticQuoteChange: false,
+    automaticTrading: false,
+  };
+}
+
+export async function getShadowRunDashboardData() {
+  const db = serverClient();
+  const startDate = shanghaiDate(new Date(), -89);
+  const recommendationCutoff = new Date(
+    Date.now() - 90 * 24 * 60 * 60 * 1000,
+  ).toISOString();
+  const yesterday = shanghaiDate(new Date(), -1);
+
+  const [
+    { data: dailyMetrics, error: dailyMetricsError },
+    { data: comparisons, error: comparisonsError },
+    { data: accuracy, error: accuracyError },
+    { data: dailyReviews, error: dailyReviewsError },
+    { data: marketNotes, error: marketNotesError },
+    { data: dailySnapshot, error: dailySnapshotError },
+    { data: controlSnapshot, error: controlSnapshotError },
+    { data: ruleRows, error: ruleError },
+  ] = await Promise.all([
+    db
+      .from("shadow_run_daily_metrics")
+      .select(
+        "currency,shadow_date,system_recommendation_count,topup_suggestion_count,quote_suggestion_count,risk_alert_count,human_decision_count,accepted_count,modified_count,rejected_count,acceptance_rate,modification_rate,rejection_rate,shadow_mode,automatic_optimization,automatic_action",
+      )
+      .eq("currency", "VND")
+      .gte("shadow_date", startDate)
+      .order("shadow_date", { ascending: false }),
+    db
+      .from("shadow_run_decision_comparisons")
+      .select(
+        "recommendation_id,currency,recommendation_time,recommendation_date,human_decision_id,decision_scope,suggestion_type,system_suggested_value,system_suggestion_reason,acceptance_status,human_final_value,final_execution_decision,adjustment_reason,reviewed_at,latest_outcome_id,observed_actual_value,actual_cash_profit_usdt,actual_economic_profit_usdt,outcome_reason,measured_at,absolute_human_difference,funding_pressure_improved,descriptive_statistics_only,shadow_mode,automatic_optimization,automatic_action",
+      )
+      .eq("currency", "VND")
+      .gte("recommendation_time", recommendationCutoff)
+      .order("reviewed_at", { ascending: false })
+      .limit(150),
+    db
+      .from("shadow_run_decision_accuracy_metrics")
+      .select("*")
+      .eq("currency", "VND")
+      .maybeSingle(),
+    db
+      .from("shadow_run_daily_reviews")
+      .select(
+        "currency,review_date,system_recommendation_count,human_decision_count,accepted_count,modified_count,rejected_count,system_major_suggestions,human_major_adjustments,biggest_difference_type,biggest_difference_system_value,biggest_difference_human_value,biggest_absolute_difference,biggest_difference_reason,learning_records,auto_generated,descriptive_statistics_only,shadow_mode,automatic_optimization,automatic_action",
+      )
+      .eq("currency", "VND")
+      .gte("review_date", startDate)
+      .order("review_date", { ascending: false }),
+    db
+      .from("shadow_run_market_context_notes")
+      .select(
+        "id,client_request_id,currency,context_date,observed_at,context_category,severity,title,observation_reason,evidence_reference,recorded_by,shadow_mode,quote_impact_applied,automatic_action,created_at",
+      )
+      .eq("currency", "VND")
+      .order("context_date", { ascending: false })
+      .order("observed_at", { ascending: false })
+      .limit(100),
+    db
+      .from("settlement_daily_operation_latest")
+      .select(
+        "id,operating_date,snapshot_time,data_completeness_status,rules_version,shadow_mode",
+      )
+      .eq("currency", "VND")
+      .order("operating_date", { ascending: false })
+      .limit(1)
+      .maybeSingle(),
+    db
+      .from("settlement_control_center_snapshots")
+      .select(
+        "id,snapshot_date,as_of,rules_version,shadow_mode",
+      )
+      .eq("currency", "VND")
+      .order("snapshot_date", { ascending: false })
+      .order("as_of", { ascending: false })
+      .limit(1)
+      .maybeSingle(),
+    db
+      .from("settlement_business_rules_current")
+      .select(
+        "rule_set_code,rule_set_version,freeze_status,current_automation_stage,rule_set_effective_at",
+      )
+      .eq("currency", "VND")
+      .order("priority")
+      .limit(1),
+  ]);
+
+  const error =
+    dailyMetricsError ??
+    comparisonsError ??
+    accuracyError ??
+    dailyReviewsError ??
+    marketNotesError ??
+    dailySnapshotError ??
+    controlSnapshotError ??
+    ruleError;
+  if (error) throw error;
+
+  const yesterdayReview =
+    dailyReviews?.find((review) => review.review_date === yesterday) ??
+    null;
+
+  return {
+    currency: "VND" as const,
+    learningWindowDays: 90,
+    startDate,
+    yesterday,
+    dailyMetrics: dailyMetrics ?? [],
+    latestMetrics: dailyMetrics?.[0] ?? null,
+    comparisons: comparisons ?? [],
+    accuracy90d: accuracy,
+    dailyReviews: dailyReviews ?? [],
+    yesterdayReview,
+    latestReview: dailyReviews?.[0] ?? null,
+    marketNotes: marketNotes ?? [],
+    sources: {
+      dailyReport: dailySnapshot,
+      controlCenter: controlSnapshot,
+      businessRules: ruleRows?.[0] ?? null,
+    },
+    shadowMode: true,
+    descriptiveStatisticsOnly: true,
+    automaticOptimization: false,
     automaticPayment: false,
     automaticTopup: false,
     automaticQuoteChange: false,

@@ -52,6 +52,10 @@ export function SettlementDailyReportActions({
   const [actualCashProfit, setActualCashProfit] = useState("");
   const [actualEconomicProfit, setActualEconomicProfit] =
     useState("");
+  const [fundingPressureBefore, setFundingPressureBefore] =
+    useState("");
+  const [fundingPressureAfter, setFundingPressureAfter] =
+    useState("");
   const [reason, setReason] = useState("");
   const [riskRealized, setRiskRealized] = useState<
     Record<string, boolean>
@@ -104,6 +108,10 @@ export function SettlementDailyReportActions({
       setMessage("至少填写一个后验结果指标。");
       return;
     }
+    if (Boolean(fundingPressureBefore) !== Boolean(fundingPressureAfter)) {
+      setMessage("资金压力前后值必须同时填写。");
+      return;
+    }
     setBusy(true);
     setMessage("");
     try {
@@ -122,6 +130,9 @@ export function SettlementDailyReportActions({
             actualCashProfitUsdt: actualCashProfit || null,
             actualEconomicProfitUsdt:
               actualEconomicProfit || null,
+            fundingPressureBeforeVnd:
+              fundingPressureBefore || null,
+            fundingPressureAfterVnd: fundingPressureAfter || null,
             actualRiskOutcomes: risks.map((risk) => ({
               risk_code: risk.code,
               realized: riskRealized[risk.code] ?? false,
@@ -255,6 +266,28 @@ export function SettlementDailyReportActions({
                   value={actualEconomicProfit}
                   onChange={(event) =>
                     setActualEconomicProfit(event.target.value)
+                  }
+                />
+              </label>
+              <label>
+                建议前资金压力（VND）
+                <input
+                  inputMode="decimal"
+                  placeholder="与补U后验结果一同记录"
+                  value={fundingPressureBefore}
+                  onChange={(event) =>
+                    setFundingPressureBefore(event.target.value)
+                  }
+                />
+              </label>
+              <label>
+                结果后资金压力（VND）
+                <input
+                  inputMode="decimal"
+                  placeholder="低于建议前表示压力改善"
+                  value={fundingPressureAfter}
+                  onChange={(event) =>
+                    setFundingPressureAfter(event.target.value)
                   }
                 />
               </label>
