@@ -1,4 +1,5 @@
 import { NextResponse } from "next/server";
+import type { SupabaseClient } from "@supabase/supabase-js";
 import { z } from "zod";
 
 import { authorizeInternalRequest } from "@/lib/api-auth";
@@ -6,7 +7,10 @@ import {
   buildSettlementLearningRecommendation,
   type LearningRiskAlert,
 } from "@/lib/settlement-learning";
-import { getSettlementIntelligenceData } from "@/lib/server-data";
+import {
+  getSettlementControlCenterData,
+  getSettlementIntelligenceData,
+} from "@/lib/server-data";
 
 const unsignedDecimal = z
   .string()
@@ -22,6 +26,12 @@ const payloadSchema = z.discriminatedUnion("kind", [
     kind: z.literal("GENERATE_RECOMMENDATION"),
     clientRequestId: z.string().uuid(),
     currency: z.literal("VND"),
+    source: z
+      .enum([
+        "SETTLEMENT_INTELLIGENCE",
+        "BUSINESS_RULES_CONFIRMATION",
+      ])
+      .default("SETTLEMENT_INTELLIGENCE"),
   }),
   z.object({
     kind: z.literal("SUBMIT_DECISION"),
@@ -61,6 +71,57 @@ const payloadSchema = z.discriminatedUnion("kind", [
   }),
 ]);
 
+const recommendationSelection =
+  "id,currency,recommendation_time,learning_phase,learning_window_days,system_topup_recommended,system_recommended_topup_usdt,system_recommended_quote_rate,system_risk_alerts,system_expected_profit_usdt,system_expected_profit_margin,system_fx_judgment,shadow_mode";
+
+async function insertRecommendation(
+  db: SupabaseClient,
+  recommendation: Record<string, unknown>,
+  clientRequestId: string,
+) {
+  const { data, error } = await db
+    .from("settlement_learning_recommendations")
+    .insert(recommendation)
+    .select(recommendationSelection)
+    .single();
+
+  if (error?.code === "23505") {
+    const { data: existing, error: existingError } = await db
+      .from("settlement_learning_recommendations")
+      .select(recommendationSelection)
+      .eq("client_request_id", clientRequestId)
+      .single();
+    if (!existingError && existing) {
+      return {
+        status: 200,
+        body: {
+          ok: true,
+          recommendation: existing,
+          idempotentReplay: true,
+          shadowMode: true,
+          automaticAction: false,
+        },
+      };
+    }
+  }
+  if (error) {
+    return {
+      status: 409,
+      body: { message: error.message },
+    };
+  }
+  return {
+    status: 200,
+    body: {
+      ok: true,
+      recommendation: data,
+      idempotentReplay: false,
+      shadowMode: true,
+      automaticAction: false,
+    },
+  };
+}
+
 export async function POST(request: Request) {
   const auth = await authorizeInternalRequest(request, [
     "admin",
@@ -96,6 +157,46 @@ export async function POST(request: Request) {
         { message: "只有结算操作员或管理员可以生成系统建议" },
         { status: 403 },
       );
+    }
+
+    if (parsed.data.source === "BUSINESS_RULES_CONFIRMATION") {
+      const control = await getSettlementControlCenterData();
+      const current = control.current;
+      const recommendation = buildSettlementLearningRecommendation({
+        clientRequestId: parsed.data.clientRequestId,
+        currency: parsed.data.currency,
+        generatedBy: auth.userId,
+        topupRecommended: current.topup.topupRecommended,
+        recommendedTopupUsdt:
+          current.topup.recommendedTopupUsdt,
+        requiredGrossTopupVnd:
+          current.topup.requiredGrossTopupVnd,
+        recommendedQuoteRate: current.fx.companyQuoteRate,
+        targetMargin: current.targetMargin,
+        riskAlerts: current.risks,
+        expectedProfitUsdt:
+          current.profitForecast?.expectedProfitUsdt ?? null,
+        expectedProfitMargin:
+          current.profitForecast?.expectedProfitMargin ?? null,
+        fxJudgment: current.fx.opportunityStatus,
+        xeRate: current.fx.xeRate,
+        p2pCostRate: current.fx.p2pCostRate,
+        fxSpreadRatio: current.fx.spreadRatio,
+        systemPayload: {
+          source: "BUSINESS_RULES_CONFIRMATION",
+          ruleSetCode: "VND_BUSINESS_RULES_FREEZE_V1",
+          controlCenter: current,
+        },
+        dataCutoffSnapshot: current.dataCutoffs,
+      });
+      const result = await insertRecommendation(
+        auth.db,
+        recommendation,
+        parsed.data.clientRequestId,
+      );
+      return NextResponse.json(result.body, {
+        status: result.status,
+      });
     }
 
     const intelligence = await getSettlementIntelligenceData();
@@ -145,45 +246,13 @@ export async function POST(request: Request) {
       dataCutoffSnapshot: intelligence.dataCutoffs,
     });
 
-    const { data, error } = await auth.db
-      .from("settlement_learning_recommendations")
-      .insert(recommendation)
-      .select(
-        "id,currency,recommendation_time,learning_phase,learning_window_days,system_topup_recommended,system_recommended_topup_usdt,system_recommended_quote_rate,system_risk_alerts,system_expected_profit_usdt,system_expected_profit_margin,system_fx_judgment,shadow_mode",
-      )
-      .single();
-
-    if (error?.code === "23505") {
-      const { data: existing, error: existingError } = await auth.db
-        .from("settlement_learning_recommendations")
-        .select(
-          "id,currency,recommendation_time,learning_phase,learning_window_days,system_topup_recommended,system_recommended_topup_usdt,system_recommended_quote_rate,system_risk_alerts,system_expected_profit_usdt,system_expected_profit_margin,system_fx_judgment,shadow_mode",
-        )
-        .eq("client_request_id", parsed.data.clientRequestId)
-        .single();
-      if (!existingError && existing) {
-        return NextResponse.json({
-          ok: true,
-          recommendation: existing,
-          idempotentReplay: true,
-          shadowMode: true,
-          automaticAction: false,
-        });
-      }
-    }
-    if (error) {
-      return NextResponse.json(
-        { message: error.message },
-        { status: 409 },
-      );
-    }
-
-    return NextResponse.json({
-      ok: true,
-      recommendation: data,
-      idempotentReplay: false,
-      shadowMode: true,
-      automaticAction: false,
+    const result = await insertRecommendation(
+      auth.db,
+      recommendation,
+      parsed.data.clientRequestId,
+    );
+    return NextResponse.json(result.body, {
+      status: result.status,
     });
   }
 

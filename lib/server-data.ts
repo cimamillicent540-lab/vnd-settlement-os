@@ -24,6 +24,11 @@ import {
   summarizeExecutionGuard,
   type MerchantBaseline,
 } from "./settlement-control-center";
+import {
+  BUSINESS_RULES_FREEZE,
+  isRecommendationForOperatingDate,
+  vndOperatingDate,
+} from "./business-rules";
 import { normalizeSupabaseUrl } from "./supabase-url";
 
 export function serverClient() {
@@ -1099,8 +1104,13 @@ export async function getSettlementControlCenterData() {
           null,
         spreadVndPerUsdt:
           intelligence.fxIntelligence?.spreadVndPerUsdt ?? null,
+        spreadRatio:
+          intelligence.fxIntelligence?.spreadRatio ?? null,
         opportunityStatus: fxOpportunityStatus,
       },
+      targetMargin:
+        intelligence.marginRecommendation.targetMargin,
+      profitForecast: intelligence.profitForecast,
       merchants,
       executionGuard,
       risks,
@@ -1126,6 +1136,70 @@ export async function getSettlementControlCenterData() {
     automaticTopup: false,
     automaticQuoteChange: false,
     automaticMarketDataCollection: false,
+    automaticTrading: false,
+  };
+}
+
+export async function getBusinessRulesFreezeData() {
+  const db = serverClient();
+  const [
+    control,
+    { data: ruleRows, error: rulesError },
+  ] = await Promise.all([
+    getSettlementControlCenterData(),
+    db
+      .from("settlement_business_rules_current")
+      .select(
+        "rule_set_code,currency,rule_set_version,freeze_status,current_automation_stage,automation_stage_definitions,rule_set_effective_at,id,rule_key,rule_category,rule_name,condition_definition,system_suggested_action,requires_human_approval,priority,applicable_stage,rule_status,shadow_mode,automatic_action",
+      )
+      .order("priority")
+      .order("rule_key"),
+  ]);
+  if (rulesError) throw rulesError;
+
+  const operatingDate = vndOperatingDate();
+  const todayRecommendations = control.learningHistory.filter(
+    (recommendation) =>
+      isRecommendationForOperatingDate(
+        recommendation.recommendation_time,
+        operatingDate,
+      ),
+  );
+  const firstRule = ruleRows?.[0] ?? null;
+
+  return {
+    operatingDate,
+    ruleSet: firstRule
+      ? {
+          code: firstRule.rule_set_code,
+          currency: firstRule.currency,
+          version: firstRule.rule_set_version,
+          freezeStatus: firstRule.freeze_status,
+          currentAutomationStage:
+            firstRule.current_automation_stage,
+          automationStageDefinitions:
+            firstRule.automation_stage_definitions,
+          effectiveAt: firstRule.rule_set_effective_at,
+        }
+      : {
+          code: BUSINESS_RULES_FREEZE.ruleSetCode,
+          currency: "VND",
+          version: BUSINESS_RULES_FREEZE.version,
+          freezeStatus: "MISSING",
+          currentAutomationStage:
+            BUSINESS_RULES_FREEZE.currentStage,
+          automationStageDefinitions: [],
+          effectiveAt: null,
+        },
+    rules: ruleRows ?? [],
+    current: control.current,
+    todayRecommendations,
+    latestTodayRecommendation:
+      todayRecommendations[0] ?? null,
+    shadowMode: true,
+    automaticPayment: false,
+    automaticTopup: false,
+    automaticQuoteChange: false,
     automaticTrading: false,
   };
 }

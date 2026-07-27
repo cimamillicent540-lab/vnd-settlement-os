@@ -16,7 +16,7 @@ cp .env.example .env.local
 npm run dev
 ```
 
-Open `http://localhost:3000`. Payout readiness and upstream-format payment preparation are available at `/payment-export`; the daily settlement decision layer is at `/settlement-intelligence`; Phase 1 human feedback and the 90-day learning history are at `/settlement-learning`; the consolidated daily operating view is at `/settlement-control-center`.
+Open `http://localhost:3000`. Payout readiness and upstream-format payment preparation are available at `/payment-export`; the daily settlement decision layer is at `/settlement-intelligence`; Phase 1 human feedback and the 90-day learning history are at `/settlement-learning`; the consolidated daily operating view is at `/settlement-control-center`; frozen VND business rules and the operator confirmation center are at `/business-rules`.
 
 Apply Supabase migrations in filename order with the Supabase CLI or dashboard SQL editor. The UI can be previewed without credentials using verified demonstration snapshots; database writes require the three values in `.env.example`.
 
@@ -35,6 +35,8 @@ Full beneficiary details are stored in a restricted RLS table and are masked in 
 Settlement Learning remains append-only and separated from execution. System recommendations, human decisions, adjustment reasons, merchant context, and per-risk judgments are retained as immutable VND learning records for a rolling 90-day analysis window. A recorded manual intent never performs a payment, topup, quote change, or trade.
 
 The Settlement Control Center combines Shadow Pricing, liquidity intelligence, payout-readiness context, and the 90-day learning loop into immutable daily snapshots. Its maximum-inventory warning uses the approved 26,500 × 50,000 USDT base limit. Saving a snapshot or human risk review records audit evidence only and cannot trigger an external action.
+
+Task 2.10 freezes confirmed topup, quote, margin, risk, and automation-stage rules as an immutable version. The operator confirmation center reuses the existing Settlement Learning recommendation and human-decision tables: accept, modify, and reject all require a reason and are retained for the 90-day model window. Stage 2 and Stage 3 remain unimplemented definitions only.
 
 To verify or import the approved reference appendices:
 
