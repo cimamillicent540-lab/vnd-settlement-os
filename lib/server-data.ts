@@ -839,3 +839,91 @@ export async function getSettlementIntelligenceData() {
     },
   };
 }
+
+export async function getSettlementLearningData() {
+  const db = serverClient();
+  const cutoff = new Date(
+    Date.now() - 90 * 24 * 60 * 60 * 1000,
+  ).toISOString();
+  const [
+    { data: recommendations, error: recommendationError },
+    { data: summary, error: summaryError },
+  ] = await Promise.all([
+    db
+      .from("settlement_learning_recommendations")
+      .select(
+        "id,currency,recommendation_time,learning_phase,learning_window_days,system_topup_recommended,system_recommended_topup_usdt,system_required_gross_topup_vnd,system_recommended_quote_rate,system_target_margin,system_risk_alerts,system_expected_profit_usdt,system_expected_profit_margin,system_fx_judgment,system_xe_rate,system_p2p_cost_rate,system_fx_spread_ratio,data_cutoff_snapshot,model_version,shadow_mode,generated_by,created_at",
+      )
+      .eq("currency", "VND")
+      .gte("recommendation_time", cutoff)
+      .order("recommendation_time", { ascending: false })
+      .order("id", { ascending: false })
+      .limit(100),
+    db
+      .from("settlement_learning_90d_summary")
+      .select("*")
+      .eq("currency", "VND")
+      .maybeSingle(),
+  ]);
+  const firstError = recommendationError ?? summaryError;
+  if (firstError) throw firstError;
+
+  const recommendationIds = (recommendations ?? []).map(
+    (row) => row.id,
+  );
+  const { data: decisions, error: decisionError } =
+    recommendationIds.length > 0
+      ? await db
+          .from("settlement_learning_latest_decisions")
+          .select(
+            "id,recommendation_id,decision_version,supersedes_decision_id,decision_scope,acceptance_status,accepted_system_suggestion,final_topup_usdt,final_quote_rate,final_execution_decision,adjustment_reason,merchant_name,transaction_volume_usdt,profit_contribution_usdt,reviewer_id,reviewed_at,shadow_mode,actual_execution_performed",
+          )
+          .in("recommendation_id", recommendationIds)
+      : { data: [], error: null };
+  if (decisionError) throw decisionError;
+
+  const decisionIds = (decisions ?? []).map((row) => row.id);
+  const { data: riskFeedback, error: riskError } =
+    decisionIds.length > 0
+      ? await db
+          .from("settlement_risk_feedback")
+          .select(
+            "id,recommendation_id,human_decision_id,risk_code,system_severity,system_message,human_judgment,human_note,reviewer_id,reviewed_at,shadow_mode,automatic_action",
+          )
+          .in("human_decision_id", decisionIds)
+          .order("created_at")
+      : { data: [], error: null };
+  if (riskError) throw riskError;
+
+  const decisionByRecommendation = new Map(
+    (decisions ?? []).map((decision) => [
+      decision.recommendation_id,
+      {
+        ...decision,
+        riskFeedback: (riskFeedback ?? []).filter(
+          (feedback) =>
+            feedback.human_decision_id === decision.id,
+        ),
+      },
+    ]),
+  );
+
+  return {
+    learningWindowDays: 90,
+    phase: "PHASE_1_HUMAN_REVIEW" as const,
+    currency: "VND" as const,
+    summary,
+    recommendations: (recommendations ?? []).map(
+      (recommendation) => ({
+        ...recommendation,
+        latestDecision:
+          decisionByRecommendation.get(recommendation.id) ?? null,
+      }),
+    ),
+    shadowMode: true,
+    automaticPayment: false,
+    automaticTopup: false,
+    automaticQuoteChange: false,
+    automaticTrading: false,
+  };
+}

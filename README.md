@@ -16,7 +16,7 @@ cp .env.example .env.local
 npm run dev
 ```
 
-Open `http://localhost:3000`. Payout readiness and upstream-format payment preparation are available at `/payment-export`; the daily settlement decision layer is at `/settlement-intelligence`.
+Open `http://localhost:3000`. Payout readiness and upstream-format payment preparation are available at `/payment-export`; the daily settlement decision layer is at `/settlement-intelligence`; Phase 1 human feedback and the 90-day learning history are at `/settlement-learning`.
 
 Apply Supabase migrations in filename order with the Supabase CLI or dashboard SQL editor. The UI can be previewed without credentials using verified demonstration snapshots; database writes require the three values in `.env.example`.
 
@@ -31,6 +31,8 @@ Names and surnames with no business need are dropped. Card/PAN fields are masked
 Task 2.6 integrates the approved `Batch Payment Templates_Local (1).xlsx` contract by SHA-256. The generated upload workbook preserves the three upstream sheet names and the exact 19-field payment header. Example payment rows and the dirty trailing country row are never imported.
 
 Full beneficiary details are stored in a restricted RLS table and are masked in ordinary UI/readiness snapshots. Only `admin` and `settlement_operator` roles can prepare files. A database transaction rechecks the latest `READY` result, duplicate exports, and current settleable balance before registering an export. The output file is downloaded for manual review only; `submitted_to_upstream` and `automatic_execution` are constrained to `false`.
+
+Settlement Learning remains append-only and separated from execution. System recommendations, human decisions, adjustment reasons, merchant context, and per-risk judgments are retained as immutable VND learning records for a rolling 90-day analysis window. A recorded manual intent never performs a payment, topup, quote change, or trade.
 
 To verify or import the approved reference appendices:
 
