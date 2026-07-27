@@ -38,6 +38,8 @@ The Settlement Control Center combines Shadow Pricing, liquidity intelligence, p
 
 Task 2.10 freezes confirmed topup, quote, margin, risk, and automation-stage rules as an immutable version. The operator confirmation center reuses the existing Settlement Learning recommendation and human-decision tables: accept, modify, and reject all require a reason and are retained for the 90-day model window. Stage 2 and Stage 3 remain unimplemented definitions only.
 
+The daily operating view always presents Cash Profit and Economic Profit together. Cash Profit is the finance view based on actual signed revenues and paid fees; Economic Profit adds signed internal-funding advantage and deducts shadow, opportunity, and unrealized-risk costs. Both values and their component snapshot are persisted in new control-center and 90-day learning records. Missing future-cost inputs are marked unavailable rather than invented.
+
 To verify or import the approved reference appendices:
 
 ```bash

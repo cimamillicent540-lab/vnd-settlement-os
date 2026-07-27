@@ -1,5 +1,7 @@
 import Decimal from "decimal.js";
 
+import { calculateDualProfitMetrics } from "./profit-metrics";
+
 Decimal.set({ precision: 40, rounding: Decimal.ROUND_HALF_UP });
 
 export const SETTLEMENT_INTELLIGENCE_RULES = Object.freeze({
@@ -356,12 +358,30 @@ export function forecastProfit(input: {
   const merchantFee = principal.mul(input.merchantFeeRate);
   const dcc = principal.mul(input.dccRevenueRate);
   const total = quoteRevenue.plus(merchantFee).plus(dcc);
+  const dualProfit = calculateDualProfitMetrics({
+    merchantPrincipalUsdt: principal.toString(),
+    merchantFeeRevenueUsdt: merchantFee.toString(),
+    signedDccRevenueUsdt: dcc.toString(),
+    realizedFxProfitUsdt: 0,
+    channelFeesUsdt: 0,
+    otherActualFeesUsdt: 0,
+    signedInternalFundingAdvantageUsdt: quoteRevenue.toString(),
+    shadowCostUsdt: 0,
+    opportunityCostUsdt: 0,
+    unrealizedRiskCostUsdt: 0,
+    dataStatus: "FORECAST_PARTIAL_ACTUAL_FEES_NOT_AVAILABLE",
+  });
   return {
     merchantPrincipalUsdt: principal.toFixed(12),
     quoteRevenueUsdt: quoteRevenue.toFixed(12),
     inventoryCostUsdt: inventoryCost.toFixed(12),
     merchantFeeRevenueUsdt: merchantFee.toFixed(12),
     dccRevenueUsdt: dcc.toFixed(12),
+    cashProfitUsdt: dualProfit.cashProfitUsdt,
+    cashProfitMargin: dualProfit.cashProfitMargin,
+    economicProfitUsdt: dualProfit.economicProfitUsdt,
+    economicProfitMargin: dualProfit.economicProfitMargin,
+    profitMetricsSnapshot: dualProfit,
     expectedProfitUsdt: total.toFixed(12),
     expectedProfitMargin:
       principal.gt(0) ? total.div(principal).toFixed(12) : "0.000000000000",

@@ -36,6 +36,11 @@ export interface LearningRecommendationInput {
   riskAlerts: LearningRiskAlert[];
   expectedProfitUsdt: string | null;
   expectedProfitMargin: string | null;
+  cashProfitUsdt: string | null;
+  cashProfitMargin: string | null;
+  economicProfitUsdt: string | null;
+  economicProfitMargin: string | null;
+  profitMetricsSnapshot: Record<string, unknown>;
   fxJudgment:
     | "BUY_VND_OPPORTUNITY"
     | "NORMAL"
@@ -73,6 +78,11 @@ export function buildSettlementLearningRecommendation(
     system_risk_alerts: input.riskAlerts,
     system_expected_profit_usdt: input.expectedProfitUsdt,
     system_expected_profit_margin: input.expectedProfitMargin,
+    system_cash_profit_usdt: input.cashProfitUsdt,
+    system_cash_profit_margin: input.cashProfitMargin,
+    system_economic_profit_usdt: input.economicProfitUsdt,
+    system_economic_profit_margin: input.economicProfitMargin,
+    profit_metrics_snapshot: input.profitMetricsSnapshot,
     system_fx_judgment: input.fxJudgment,
     system_xe_rate: input.xeRate,
     system_p2p_cost_rate: input.p2pCostRate,

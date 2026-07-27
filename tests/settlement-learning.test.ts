@@ -35,6 +35,13 @@ describe("Settlement Learning recommendation records", () => {
       ],
       expectedProfitUsdt: "50.000000000000",
       expectedProfitMargin: "0.005000000000",
+      cashProfitUsdt: "30.000000000000",
+      cashProfitMargin: "0.003000000000",
+      economicProfitUsdt: "50.000000000000",
+      economicProfitMargin: "0.005000000000",
+      profitMetricsSnapshot: {
+        dataStatus: "FORECAST_PARTIAL_ACTUAL_FEES_NOT_AVAILABLE",
+      },
       fxJudgment: "BUY_VND_OPPORTUNITY",
       xeRate: "26000.000000000000",
       p2pCostRate: "26250.000000000000",
@@ -51,6 +58,8 @@ describe("Settlement Learning recommendation records", () => {
       system_recommended_topup_usdt: "100.00000000",
       system_recommended_quote_rate: "26120.000000000000",
       system_expected_profit_usdt: "50.000000000000",
+      system_cash_profit_usdt: "30.000000000000",
+      system_economic_profit_usdt: "50.000000000000",
       system_fx_judgment: "BUY_VND_OPPORTUNITY",
       shadow_mode: true,
     });

@@ -542,6 +542,13 @@ export interface ControlSnapshotInput {
   };
   merchants: ReturnType<typeof recommendMerchantQuotes>;
   executionGuard: ReturnType<typeof summarizeExecutionGuard>;
+  profitMetrics: {
+    cashProfitUsdt: string | null;
+    cashProfitMargin: string | null;
+    economicProfitUsdt: string | null;
+    economicProfitMargin: string | null;
+    snapshot: Record<string, unknown>;
+  };
   risks: ControlRiskAlert[];
   learning90dSnapshot: Record<string, unknown>;
   dataCutoffSnapshot: Record<string, unknown>;
@@ -610,6 +617,12 @@ export function buildControlCenterSnapshotRecord(
     execution_blocked_count: input.executionGuard.blockedCount,
     execution_warning_count: input.executionGuard.warningCount,
     execution_guard_snapshot: input.executionGuard,
+    cash_profit_usdt: input.profitMetrics.cashProfitUsdt,
+    cash_profit_margin: input.profitMetrics.cashProfitMargin,
+    economic_profit_usdt: input.profitMetrics.economicProfitUsdt,
+    economic_profit_margin:
+      input.profitMetrics.economicProfitMargin,
+    profit_metrics_snapshot: input.profitMetrics.snapshot,
     risk_alerts: input.risks,
     learning_90d_snapshot: input.learning90dSnapshot,
     data_cutoff_snapshot: input.dataCutoffSnapshot,

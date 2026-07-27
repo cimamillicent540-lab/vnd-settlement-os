@@ -143,6 +143,8 @@ export default async function SettlementLearningPage() {
                     <th>建议时间</th>
                     <th>补U建议</th>
                     <th>报价建议</th>
+                    <th>Cash Profit</th>
+                    <th>Economic Profit</th>
                     <th>风险数</th>
                     <th>汇率判断</th>
                     <th>人工结果</th>
@@ -177,6 +179,24 @@ export default async function SettlementLearningPage() {
                             : formatRate(
                                 recommendation.system_recommended_quote_rate,
                                 4,
+                              )}
+                        </td>
+                        <td>
+                          {recommendation.system_cash_profit_usdt ===
+                          null
+                            ? "—"
+                            : formatUsdt(
+                                recommendation.system_cash_profit_usdt,
+                                2,
+                              )}
+                        </td>
+                        <td>
+                          {recommendation.system_economic_profit_usdt ===
+                          null
+                            ? "—"
+                            : formatUsdt(
+                                recommendation.system_economic_profit_usdt,
+                                2,
                               )}
                         </td>
                         <td>{risks.length}</td>

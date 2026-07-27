@@ -1,6 +1,6 @@
 export const BUSINESS_RULES_FREEZE = Object.freeze({
-  ruleSetCode: "VND_BUSINESS_RULES_FREEZE_V1",
-  version: 1,
+  ruleSetCode: "VND_BUSINESS_RULES_FREEZE_V2",
+  version: 2,
   currentStage: "STAGE_1_HUMAN_REVIEW",
   safetyBuffer: "0.10",
   maximumInventoryUsdt: "50000",

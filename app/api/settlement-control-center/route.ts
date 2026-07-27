@@ -68,6 +68,7 @@ export async function POST(request: Request) {
       fx: control.current.fx,
       merchants: control.current.merchants,
       executionGuard: control.current.executionGuard,
+      profitMetrics: control.current.profitMetrics.forecast,
       risks: control.current.risks,
       learning90dSnapshot:
         (control.current.learning90d as Record<string, unknown>) ??
@@ -78,7 +79,7 @@ export async function POST(request: Request) {
       .from("settlement_control_center_snapshots")
       .insert(record)
       .select(
-        "id,snapshot_date,as_of,funds_risk_status,topup_recommended,recommended_topup_usdt,inventory_limit_status,fx_opportunity_status,shadow_mode",
+        "id,snapshot_date,as_of,funds_risk_status,topup_recommended,recommended_topup_usdt,inventory_limit_status,fx_opportunity_status,cash_profit_usdt,economic_profit_usdt,shadow_mode",
       )
       .single();
 
@@ -86,7 +87,7 @@ export async function POST(request: Request) {
       const { data: existing, error: existingError } = await auth.db
         .from("settlement_control_center_snapshots")
         .select(
-          "id,snapshot_date,as_of,funds_risk_status,topup_recommended,recommended_topup_usdt,inventory_limit_status,fx_opportunity_status,shadow_mode",
+          "id,snapshot_date,as_of,funds_risk_status,topup_recommended,recommended_topup_usdt,inventory_limit_status,fx_opportunity_status,cash_profit_usdt,economic_profit_usdt,shadow_mode",
         )
         .eq("client_request_id", parsed.data.clientRequestId)
         .single();

@@ -71,6 +71,8 @@ type SavedRisk = {
 export default async function SettlementControlCenterPage() {
   const data = await getSettlementControlCenterData();
   const current = data.current;
+  const latestProfit = current.profitMetrics.latestHistorical;
+  const forecastProfit = current.profitMetrics.forecast;
   const latestSnapshotRisks = Array.isArray(
     data.latestSnapshot?.risk_alerts,
   )
@@ -279,6 +281,103 @@ export default async function SettlementControlCenterPage() {
           </CardContent>
         </Card>
       </div>
+
+      <Card className="control-section-gap">
+        <CardHeader>
+          <div>
+            <h2 className="panel-title">
+              Cash Profit + Economic Profit
+            </h2>
+            <div className="panel-subtitle">
+              财务现金视角与经营/AI视角必须同时保存和展示，不允许二选一
+            </div>
+          </div>
+          <Badge variant="violet">BOTH REQUIRED</Badge>
+        </CardHeader>
+        <CardContent>
+          <div className="dual-profit-grid">
+            <section>
+              <span>Cash Profit · 财务视角</span>
+              <strong>
+                {latestProfit
+                  ? formatUsdt(latestProfit.cash_profit_usdt, 2)
+                  : "暂无历史日数据"}
+              </strong>
+              <small>
+                {latestProfit
+                  ? `${latestProfit.profit_date} · ${percent(
+                      latestProfit.cash_profit_margin,
+                    )}`
+                  : "等待可计算数据"}
+              </small>
+            </section>
+            <section>
+              <span>Economic Profit · 经营/AI视角</span>
+              <strong>
+                {latestProfit
+                  ? formatUsdt(
+                      latestProfit.economic_profit_usdt,
+                      2,
+                    )
+                  : "暂无历史日数据"}
+              </strong>
+              <small>
+                {latestProfit
+                  ? `${latestProfit.profit_date} · ${percent(
+                      latestProfit.economic_profit_margin,
+                    )}`
+                  : "等待可计算数据"}
+              </small>
+            </section>
+            <section>
+              <span>预测 Cash Profit</span>
+              <strong>
+                {forecastProfit.cashProfitUsdt
+                  ? formatUsdt(forecastProfit.cashProfitUsdt, 2)
+                  : "NOT CALCULABLE"}
+              </strong>
+              <small>
+                {percent(forecastProfit.cashProfitMargin)}
+              </small>
+            </section>
+            <section>
+              <span>预测 Economic Profit</span>
+              <strong>
+                {forecastProfit.economicProfitUsdt
+                  ? formatUsdt(
+                      forecastProfit.economicProfitUsdt,
+                      2,
+                    )
+                  : "NOT CALCULABLE"}
+              </strong>
+              <small>
+                {percent(forecastProfit.economicProfitMargin)}
+              </small>
+            </section>
+          </div>
+          <div className="control-grid-2 dual-profit-breakdown">
+            <div className="alert alert-info">
+              <div>
+                <strong>Cash Profit</strong>
+                商户手续费 + 带符号DCC + 已实现汇差 − 通道费 −
+                其他实际费用
+              </div>
+            </div>
+            <div className="alert alert-info">
+              <div>
+                <strong>Economic Profit</strong>
+                Cash Profit + 带符号内部资金优势 − 影子成本 −
+                机会成本 − 未实现风险成本
+              </div>
+            </div>
+          </div>
+          {latestProfit ? (
+            <div className="control-data-cutoff">
+              数据状态：{latestProfit.profit_data_status}。机会成本与未实现风险成本没有真实来源时保持0并标记不可用，不虚构金额。
+            </div>
+          ) : null}
+        </CardContent>
+      </Card>
 
       <Card className="control-section-gap">
         <CardHeader>

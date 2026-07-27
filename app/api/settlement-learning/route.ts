@@ -72,7 +72,7 @@ const payloadSchema = z.discriminatedUnion("kind", [
 ]);
 
 const recommendationSelection =
-  "id,currency,recommendation_time,learning_phase,learning_window_days,system_topup_recommended,system_recommended_topup_usdt,system_recommended_quote_rate,system_risk_alerts,system_expected_profit_usdt,system_expected_profit_margin,system_fx_judgment,shadow_mode";
+  "id,currency,recommendation_time,learning_phase,learning_window_days,system_topup_recommended,system_recommended_topup_usdt,system_recommended_quote_rate,system_risk_alerts,system_expected_profit_usdt,system_expected_profit_margin,system_cash_profit_usdt,system_cash_profit_margin,system_economic_profit_usdt,system_economic_profit_margin,profit_metrics_snapshot,system_fx_judgment,shadow_mode";
 
 async function insertRecommendation(
   db: SupabaseClient,
@@ -178,13 +178,26 @@ export async function POST(request: Request) {
           current.profitForecast?.expectedProfitUsdt ?? null,
         expectedProfitMargin:
           current.profitForecast?.expectedProfitMargin ?? null,
+        cashProfitUsdt:
+          current.profitForecast?.cashProfitUsdt ?? null,
+        cashProfitMargin:
+          current.profitForecast?.cashProfitMargin ?? null,
+        economicProfitUsdt:
+          current.profitForecast?.economicProfitUsdt ?? null,
+        economicProfitMargin:
+          current.profitForecast?.economicProfitMargin ?? null,
+        profitMetricsSnapshot:
+          current.profitForecast?.profitMetricsSnapshot ?? {
+            dataStatus: "NOT_CALCULABLE",
+            bothMetricsRequired: true,
+          },
         fxJudgment: current.fx.opportunityStatus,
         xeRate: current.fx.xeRate,
         p2pCostRate: current.fx.p2pCostRate,
         fxSpreadRatio: current.fx.spreadRatio,
         systemPayload: {
           source: "BUSINESS_RULES_CONFIRMATION",
-          ruleSetCode: "VND_BUSINESS_RULES_FREEZE_V1",
+          ruleSetCode: "VND_BUSINESS_RULES_FREEZE_V2",
           controlCenter: current,
         },
         dataCutoffSnapshot: current.dataCutoffs,
@@ -220,6 +233,19 @@ export async function POST(request: Request) {
         intelligence.profitForecast?.expectedProfitUsdt ?? null,
       expectedProfitMargin:
         intelligence.profitForecast?.expectedProfitMargin ?? null,
+      cashProfitUsdt:
+        intelligence.profitForecast?.cashProfitUsdt ?? null,
+      cashProfitMargin:
+        intelligence.profitForecast?.cashProfitMargin ?? null,
+      economicProfitUsdt:
+        intelligence.profitForecast?.economicProfitUsdt ?? null,
+      economicProfitMargin:
+        intelligence.profitForecast?.economicProfitMargin ?? null,
+      profitMetricsSnapshot:
+        intelligence.profitForecast?.profitMetricsSnapshot ?? {
+          dataStatus: "NOT_CALCULABLE",
+          bothMetricsRequired: true,
+        },
       fxJudgment:
         intelligence.fxIntelligence?.opportunity ===
           "BUY_VND_OPPORTUNITY" ||

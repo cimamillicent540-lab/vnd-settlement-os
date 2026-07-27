@@ -866,7 +866,7 @@ export async function getSettlementLearningData() {
     db
       .from("settlement_learning_recommendations")
       .select(
-        "id,currency,recommendation_time,learning_phase,learning_window_days,system_topup_recommended,system_recommended_topup_usdt,system_required_gross_topup_vnd,system_recommended_quote_rate,system_target_margin,system_risk_alerts,system_expected_profit_usdt,system_expected_profit_margin,system_fx_judgment,system_xe_rate,system_p2p_cost_rate,system_fx_spread_ratio,data_cutoff_snapshot,model_version,shadow_mode,generated_by,created_at",
+        "id,currency,recommendation_time,learning_phase,learning_window_days,system_topup_recommended,system_recommended_topup_usdt,system_required_gross_topup_vnd,system_recommended_quote_rate,system_target_margin,system_risk_alerts,system_expected_profit_usdt,system_expected_profit_margin,system_cash_profit_usdt,system_cash_profit_margin,system_economic_profit_usdt,system_economic_profit_margin,profit_metrics_snapshot,system_fx_judgment,system_xe_rate,system_p2p_cost_rate,system_fx_spread_ratio,data_cutoff_snapshot,model_version,shadow_mode,generated_by,created_at",
       )
       .eq("currency", "VND")
       .gte("recommendation_time", cutoff)
@@ -949,6 +949,7 @@ export async function getSettlementControlCenterData() {
     learning,
     { data: merchantRows, error: merchantError },
     { data: readinessRows, error: readinessError },
+    { data: dailyProfitRows, error: dailyProfitError },
     { data: savedSnapshots, error: snapshotError },
   ] = await Promise.all([
     getSettlementIntelligenceData(),
@@ -967,9 +968,16 @@ export async function getSettlementControlCenterData() {
       .order("check_status")
       .order("risk_level"),
     db
+      .from("settlement_daily_profit_dual_metrics")
+      .select(
+        "pricing_run_id,pricing_rules_version,pricing_run_time,profit_date,payout_count,merchant_principal_usdt,merchant_fee_revenue_usdt,dcc_revenue_usdt,realized_fx_profit_usdt,channel_fees_usdt,other_actual_fees_usdt,cash_profit_usdt,cash_profit_margin,internal_funding_advantage_usdt,shadow_cost_usdt,opportunity_cost_usdt,unrealized_risk_cost_usdt,economic_profit_usdt,economic_profit_margin,profit_data_status,calculation_snapshot",
+      )
+      .order("profit_date", { ascending: false })
+      .limit(90),
+    db
       .from("settlement_control_center_snapshots")
       .select(
-        "id,snapshot_date,as_of,currency,gross_balance_vnd,settleable_balance_vnd,reserve_balance_vnd,available_funds_ratio,funds_risk_status,forecast_payout_vnd,forecast_payin_vnd,forecast_net_demand_vnd,peak_pressure_vnd,learning_adjustment_vnd,topup_recommended,recommended_topup_usdt,recommended_topup_time,topup_reasons,topup_objectives,inventory_vnd,projected_inventory_vnd,maximum_inventory_vnd,inventory_limit_status,manual_inventory_confirmation_required,execution_ready_count,execution_blocked_count,execution_warning_count,execution_guard_snapshot,xe_rate,p2p_cost_rate,company_quote_rate,fx_spread_vnd_per_usdt,fx_opportunity_status,merchant_quote_recommendations,risk_alerts,learning_90d_snapshot,data_cutoff_snapshot,rules_version,shadow_mode,created_at",
+        "id,snapshot_date,as_of,currency,gross_balance_vnd,settleable_balance_vnd,reserve_balance_vnd,available_funds_ratio,funds_risk_status,forecast_payout_vnd,forecast_payin_vnd,forecast_net_demand_vnd,peak_pressure_vnd,learning_adjustment_vnd,topup_recommended,recommended_topup_usdt,recommended_topup_time,topup_reasons,topup_objectives,inventory_vnd,projected_inventory_vnd,maximum_inventory_vnd,inventory_limit_status,manual_inventory_confirmation_required,execution_ready_count,execution_blocked_count,execution_warning_count,execution_guard_snapshot,cash_profit_usdt,cash_profit_margin,economic_profit_usdt,economic_profit_margin,profit_metrics_snapshot,xe_rate,p2p_cost_rate,company_quote_rate,fx_spread_vnd_per_usdt,fx_opportunity_status,merchant_quote_recommendations,risk_alerts,learning_90d_snapshot,data_cutoff_snapshot,rules_version,shadow_mode,created_at",
       )
       .eq("currency", "VND")
       .order("as_of", { ascending: false })
@@ -977,7 +985,10 @@ export async function getSettlementControlCenterData() {
       .limit(10),
   ]);
   const firstError =
-    merchantError ?? readinessError ?? snapshotError;
+    merchantError ??
+    readinessError ??
+    dailyProfitError ??
+    snapshotError;
   if (firstError) throw firstError;
 
   const merchantBaselines: MerchantBaseline[] = (
@@ -1111,6 +1122,26 @@ export async function getSettlementControlCenterData() {
       targetMargin:
         intelligence.marginRecommendation.targetMargin,
       profitForecast: intelligence.profitForecast,
+      profitMetrics: {
+        latestHistorical: dailyProfitRows?.[0] ?? null,
+        dailyHistory: dailyProfitRows ?? [],
+        forecast: {
+          cashProfitUsdt:
+            intelligence.profitForecast?.cashProfitUsdt ?? null,
+          cashProfitMargin:
+            intelligence.profitForecast?.cashProfitMargin ?? null,
+          economicProfitUsdt:
+            intelligence.profitForecast?.economicProfitUsdt ?? null,
+          economicProfitMargin:
+            intelligence.profitForecast?.economicProfitMargin ??
+            null,
+          snapshot:
+            intelligence.profitForecast?.profitMetricsSnapshot ?? {
+              dataStatus: "NOT_CALCULABLE",
+              bothMetricsRequired: true,
+            },
+        },
+      },
       merchants,
       executionGuard,
       risks,
