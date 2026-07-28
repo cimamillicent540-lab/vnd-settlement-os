@@ -1839,3 +1839,80 @@ export async function getAiDecisionScoreData() {
     automaticOptimization: false,
   };
 }
+
+export async function getHumanApprovalCenterData() {
+  const db = serverClient();
+  const control = await getSettlementControlCenterData();
+  const recommendationId =
+    control.current.sourceLearningRecommendationId;
+  const [
+    { data: reasonCatalog, error: reasonError },
+    { data: queue, error: queueError },
+    { data: learningRows, error: learningError },
+  ] = await Promise.all([
+    db
+      .from("approval_reason_catalog")
+      .select(
+        "id,reason_code,reason_category,display_name,description,applies_to,requires_detail,catalog_version,active",
+      )
+      .eq("active", true)
+      .order("reason_category")
+      .order("reason_code"),
+    recommendationId
+      ? db
+          .from("approval_center_queue")
+          .select(
+            "id,client_request_id,request_batch_id,recommendation_id,request_type,request_key,request_version,operating_date,recommendation_time,currency,ai_original_suggestion,ai_reason,ai_topup_usdt,estimated_topup_cost_vnd,estimated_coverage_time,merchant_name,current_quote_rate,ai_quote_rate,predicted_profit_impact_usdt,predicted_profit_impact_ratio,merchant_tier,risk_code,ai_risk_level,risk_message,predicted_cash_profit_usdt,predicted_economic_profit_usdt,model_version,learning_window_days,shadow_mode,latest_action_id,latest_action_version,latest_action_type,latest_normalized_outcome,final_topup_usdt,final_quote_rate,final_risk_level,adjustment_amount,adjustment_ratio,reason_code,reason_detail,profit_result_status,final_cash_profit_result_usdt,final_economic_profit_result_usdt,reviewed_at,human_execution_intent,actual_execution_performed",
+          )
+          .eq("recommendation_id", recommendationId)
+          .order("request_type")
+          .order("request_key")
+      : Promise.resolve({ data: [], error: null }),
+    db
+      .from("approval_learning_90d")
+      .select(
+        "approval_request_id,request_type,normalized_outcome,adjustment_amount,adjustment_ratio,reason_code,profit_result_status,reviewed_at",
+      )
+      .order("reviewed_at", { ascending: false })
+      .limit(500),
+  ]);
+  const error = reasonError ?? queueError ?? learningError;
+  if (error) throw error;
+
+  const learning = learningRows ?? [];
+  const summary = {
+    decisionCount: learning.length,
+    acceptedCount: learning.filter(
+      (row) => row.normalized_outcome === "ACCEPTED",
+    ).length,
+    modifiedCount: learning.filter(
+      (row) => row.normalized_outcome === "MODIFIED",
+    ).length,
+    rejectedCount: learning.filter(
+      (row) => row.normalized_outcome === "REJECTED",
+    ).length,
+    pendingProfitResultCount: learning.filter(
+      (row) => row.profit_result_status === "PENDING_OUTCOME",
+    ).length,
+  };
+
+  return {
+    recommendationId,
+    latestRecommendation:
+      control.learningHistory.find(
+        (row) => row.id === recommendationId,
+      ) ?? null,
+    control: control.current,
+    reasonCatalog: reasonCatalog ?? [],
+    queue: queue ?? [],
+    learningSummary: summary,
+    learningWindowDays: 90,
+    allowedRoles: ["admin", "settlement_operator"] as const,
+    shadowMode: true,
+    automaticPayment: false,
+    automaticTopup: false,
+    automaticQuoteChange: false,
+    automaticTrading: false,
+    actualExecutionPerformed: false,
+  };
+}

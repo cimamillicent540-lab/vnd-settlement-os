@@ -50,6 +50,8 @@ Task 2.14 adds `/shadow-validation` for a manually started seven-day validation 
 
 Task 2.15 adds `/ai-decision-score` as a versioned scoring layer over completed Task 2.14 days. It separately evaluates topup quantity/reference cost/FX opportunity, quote profit/competition/transaction risk, dual-profit forecast error, and risk hits/false positives/misses, then applies the frozen 30%/30%/25%/15% overall weighting. Missing evidence stays explicit and no score can trigger or optimize a financial action.
 
+Task 2.16 adds `/approval-center` as a Phase 1 human-approval workflow over immutable AI recommendations. Topup, merchant quote, and risk requests are reviewed only by `admin` or `settlement_operator`; every decision appends a versioned action, catalog reason, free-text explanation, adjustment, and separate Cash/Economic Profit evidence for the 90-day learning loop. Approval records intent only and cannot pay, top up, change a quote, or trade.
+
 To verify or import the approved reference appendices:
 
 ```bash
