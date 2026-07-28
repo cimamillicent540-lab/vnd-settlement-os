@@ -36,9 +36,14 @@ describe("Cloudflare production configuration", () => {
     expect(wrangler.assets).toMatchObject({
       binding: "ASSETS",
       directory: "./dist/client",
-      run_worker_first: true,
+      run_worker_first: false,
     });
     expect(wrangler.images).toEqual({ binding: "IMAGES" });
+  });
+
+  it("serves matching CSS and JavaScript before invoking SSR", () => {
+    expect(wrangler.assets.run_worker_first).toBe(false);
+    expect(wrangler.assets.not_found_handling).toBe("none");
   });
 
   it("declares the server secret without storing a value", () => {
