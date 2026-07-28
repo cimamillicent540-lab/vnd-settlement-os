@@ -4,10 +4,22 @@ import {Badge} from "@/components/ui/badge";
 import {Card,CardHeader} from "@/components/ui/card";
 import {KpiCard,PageHeading,Pagination} from "@/components/page-parts";
 import {assessDataCompleteness} from "@/lib/domain";
-import {getPoolSnapshot} from "@/lib/server-data";
+import {classifyServerDataFailure,getPoolSnapshot} from "@/lib/server-data";
 import {formatVnd} from "@/lib/utils";
 export const metadata:Metadata={title:"VND 资金池"};
-export default async function PoolPage(){const {ledger,opening,dataCutoffs}=await getPoolSnapshot();const latest=ledger[0];const completeness=assessDataCompleteness(dataCutoffs.accountHistoryLocal,dataCutoffs.topupDate,dataCutoffs.payoutUtc);return <>
+export default async function PoolPage(){
+ let snapshot:Awaited<ReturnType<typeof getPoolSnapshot>>;
+ try{
+  snapshot=await getPoolSnapshot();
+ }catch(error){
+  const failureCode=classifyServerDataFailure(error);
+  console.error("pool_snapshot_load_failed",{failureCode});
+  return <>
+   <PageHeading title="VND 资金池" subtitle="Gross 上游账面层与 50% Settleable 可结算层 · Shadow Mode"/>
+   <div className="alert alert-warning"><Info size={15}/><div><strong>资金池数据暂不可用</strong>{failureCode==="SUPABASE_QUERY_FAILED"?"Supabase 查询暂时失败，请检查数据库连接与服务状态。":"Cloudflare 运行环境尚未完成 Supabase 服务端配置。请配置运行时密钥后重新部署。"}系统仍处于 Shadow Mode，未执行任何资金操作。</div></div>
+  </>;
+ }
+ const {ledger,opening,dataCutoffs}=snapshot;const latest=ledger[0];const completeness=assessDataCompleteness(dataCutoffs.accountHistoryLocal,dataCutoffs.topupDate,dataCutoffs.payoutUtc);return <>
  <PageHeading title="VND 资金池" subtitle="Gross 上游账面层与 50% Settleable 可结算层 · Shadow Mode"/>
  <div className="kpi-grid">
   <KpiCard label="上游账面余额" value={formatVnd(latest?.gross_balance_after_vnd??0)} note={<span>Gross account balance</span>} icon={Landmark}/>

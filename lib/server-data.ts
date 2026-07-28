@@ -36,16 +36,45 @@ import { AI_DECISION_SCORE_RULES } from "./ai-decision-score";
 import { shanghaiDate } from "./shadow-run-dashboard";
 import { normalizeSupabaseUrl } from "./supabase-url";
 
+export type ServerDataFailureCode =
+  | "SUPABASE_CONFIGURATION_MISSING"
+  | "SUPABASE_URL_INVALID"
+  | "SUPABASE_QUERY_FAILED";
+
+export class ServerDataConfigurationError extends Error {
+  constructor(
+    readonly code: Exclude<
+      ServerDataFailureCode,
+      "SUPABASE_QUERY_FAILED"
+    >,
+  ) {
+    super(code);
+    this.name = "ServerDataConfigurationError";
+  }
+}
+
+export function classifyServerDataFailure(
+  error: unknown,
+): ServerDataFailureCode {
+  return error instanceof ServerDataConfigurationError
+    ? error.code
+    : "SUPABASE_QUERY_FAILED";
+}
+
 export function serverClient() {
   const configured = process.env.NEXT_PUBLIC_SUPABASE_URL;
   const secret =
     process.env.SUPABASE_SECRET_KEY ??
     process.env.SUPABASE_SERVICE_ROLE_KEY;
   if (!configured || !secret) {
-    throw new Error("Supabase server configuration is missing");
+    throw new ServerDataConfigurationError(
+      "SUPABASE_CONFIGURATION_MISSING",
+    );
   }
   const url = normalizeSupabaseUrl(configured);
-  if (!url) throw new Error("Supabase URL is invalid");
+  if (!url) {
+    throw new ServerDataConfigurationError("SUPABASE_URL_INVALID");
+  }
   return createClient(url, secret, {
     auth: { persistSession: false, autoRefreshToken: false },
   });
