@@ -7,6 +7,7 @@ import {
   loadSsrPageData,
   SSR_PAGE_BUDGET_MS,
   SSR_QUERY_PLAN,
+  SSR_SUCCESS_CACHE_MS,
   SUPABASE_REQUEST_BUDGET_MS,
   SsrPageBudgetExceededError,
 } from "../lib/ssr-performance";
@@ -29,6 +30,7 @@ describe("Task 2.18 SSR query plan", () => {
       SSR_PAGE_BUDGET_MS,
     );
     expect(SSR_PAGE_BUDGET_MS).toBeLessThanOrEqual(12_000);
+    expect(SSR_SUCCESS_CACHE_MS).toBeLessThanOrEqual(2_000);
   });
 
   it("reduces Approval Center from the full control-center fanout", () => {
@@ -91,6 +93,34 @@ describe("Task 2.18 SSR deadline", () => {
     expect(info).toHaveBeenCalledWith(
       "ssr_data_load",
       expect.objectContaining({ outcome: "READY" }),
+    );
+    info.mockRestore();
+  });
+
+  it("coalesces duplicate RSC and SSR reads without long-lived caching", async () => {
+    const info = vi.spyOn(console, "info").mockImplementation(() => {});
+    const loader = vi.fn(async () => ({ status: "ready" }));
+    const page = `/coalesced-${crypto.randomUUID()}`;
+
+    const [first, second] = await Promise.all([
+      loadSsrPageData({
+        page,
+        plannedQueries: 4,
+        loader,
+      }),
+      loadSsrPageData({
+        page,
+        plannedQueries: 4,
+        loader,
+      }),
+    ]);
+
+    expect(first).toEqual({ status: "ready" });
+    expect(second).toEqual({ status: "ready" });
+    expect(loader).toHaveBeenCalledTimes(1);
+    expect(info).toHaveBeenCalledWith(
+      "ssr_data_load",
+      expect.objectContaining({ cacheStatus: "HIT" }),
     );
     info.mockRestore();
   });
