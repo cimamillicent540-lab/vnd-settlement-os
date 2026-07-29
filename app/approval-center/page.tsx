@@ -11,9 +11,17 @@ import {
   ApprovalQueueSync,
 } from "@/components/approval-center-actions";
 import { KpiCard, PageHeading } from "@/components/page-parts";
+import { SsrDataFallback } from "@/components/ssr-data-fallback";
 import { Badge } from "@/components/ui/badge";
 import { Card, CardContent, CardHeader } from "@/components/ui/card";
-import { getHumanApprovalCenterData } from "@/lib/server-data";
+import {
+  classifyServerDataFailure,
+  getHumanApprovalCenterData,
+} from "@/lib/server-data";
+import {
+  loadSsrPageData,
+  SSR_QUERY_PLAN,
+} from "@/lib/ssr-performance";
 import { formatRate, formatUsdt, formatVnd } from "@/lib/utils";
 
 export const metadata: Metadata = {
@@ -38,7 +46,22 @@ function actionVariant(action: string | null) {
 }
 
 export default async function ApprovalCenterPage() {
-  const data = await getHumanApprovalCenterData();
+  let data: Awaited<ReturnType<typeof getHumanApprovalCenterData>>;
+  try {
+    data = await loadSsrPageData({
+      page: "/approval-center",
+      plannedQueries: SSR_QUERY_PLAN.approvalCenter.plannedQueries,
+      loader: getHumanApprovalCenterData,
+    });
+  } catch (error) {
+    return (
+      <SsrDataFallback
+        title="VND Human Approval Center"
+        subtitle="审批数据查询降级 · Phase 1 Shadow Mode"
+        failureCode={classifyServerDataFailure(error)}
+      />
+    );
+  }
   const queue = data.queue;
   const topups = queue.filter((row) => row.request_type === "TOPUP");
   const quotes = queue.filter((row) => row.request_type === "QUOTE");

@@ -34,6 +34,7 @@ import {
 } from "./settlement-daily-report";
 import { AI_DECISION_SCORE_RULES } from "./ai-decision-score";
 import { shanghaiDate } from "./shadow-run-dashboard";
+import { fetchWithSupabaseBudget } from "./ssr-performance";
 import { normalizeSupabaseUrl } from "./supabase-url";
 
 export type ServerDataFailureCode =
@@ -77,6 +78,7 @@ export function serverClient() {
   }
   return createClient(url, secret, {
     auth: { persistSession: false, autoRefreshToken: false },
+    global: { fetch: fetchWithSupabaseBudget },
   });
 }
 
@@ -1207,7 +1209,31 @@ export async function getSettlementControlCenterData() {
 
 export async function getSettlementDailyReportData() {
   const db = serverClient();
-  const control = await getSettlementControlCenterData();
+  const controlPromise = getSettlementControlCenterData();
+  const accuracyQuery = db
+    .from("settlement_decision_accuracy_90d")
+    .select("*")
+    .eq("currency", "VND")
+    .maybeSingle();
+  const validationQueueQuery = db
+    .from("settlement_decision_validation_queue")
+    .select(
+      "recommendation_id,currency,recommendation_time,system_recommended_topup_usdt,system_recommended_quote_rate,system_cash_profit_usdt,system_economic_profit_usdt,system_risk_alerts,human_decision_id,decision_scope,acceptance_status,final_topup_usdt,topup_adjustment_usdt,final_quote_rate,quote_adjustment,final_execution_decision,adjustment_reason,reviewed_at,latest_outcome_id,outcome_version,actual_topup_usdt,actual_quote_rate,actual_cash_profit_usdt,actual_economic_profit_usdt,actual_risk_outcomes,outcome_reason,measured_at,pending_outcome,shadow_mode,automatic_action",
+    )
+    .eq("currency", "VND")
+    .order("reviewed_at", { ascending: false })
+    .limit(50);
+  const savedReportsQuery = db
+    .from("settlement_daily_operation_snapshots")
+    .select(
+      "id,client_request_id,operating_date,snapshot_time,currency,gross_balance_vnd,settleable_balance_vnd,reserve_balance_vnd,today_payin_vnd,today_payout_vnd,net_funds_change_vnd,forecast_payout_vnd,forecast_payin_vnd,forecast_net_demand_vnd,peak_16_23_pressure_vnd,funding_shortfall_exists,projected_shortfall_vnd,topup_recommended,recommended_topup_usdt,recommended_topup_time,cash_profit_usdt,cash_profit_margin,economic_profit_usdt,economic_profit_margin,fx_opportunity_status,risk_alerts,data_cutoff_snapshot,data_completeness_status,rules_version,shadow_mode,created_at",
+    )
+    .eq("currency", "VND")
+    .order("operating_date", { ascending: false })
+    .order("snapshot_time", { ascending: false })
+    .limit(30);
+
+  const control = await controlPromise;
   const operatingDate = operatingDateFromAccountCutoff(
     control.current.dataCutoffs.accountHistoryLocal,
   );
@@ -1242,28 +1268,9 @@ export async function getSettlementDailyReportData() {
   ] = await Promise.all([
     activityQuery,
     merchantQuery,
-    db
-      .from("settlement_decision_accuracy_90d")
-      .select("*")
-      .eq("currency", "VND")
-      .maybeSingle(),
-    db
-      .from("settlement_decision_validation_queue")
-      .select(
-        "recommendation_id,currency,recommendation_time,system_recommended_topup_usdt,system_recommended_quote_rate,system_cash_profit_usdt,system_economic_profit_usdt,system_risk_alerts,human_decision_id,decision_scope,acceptance_status,final_topup_usdt,topup_adjustment_usdt,final_quote_rate,quote_adjustment,final_execution_decision,adjustment_reason,reviewed_at,latest_outcome_id,outcome_version,actual_topup_usdt,actual_quote_rate,actual_cash_profit_usdt,actual_economic_profit_usdt,actual_risk_outcomes,outcome_reason,measured_at,pending_outcome,shadow_mode,automatic_action",
-      )
-      .eq("currency", "VND")
-      .order("reviewed_at", { ascending: false })
-      .limit(50),
-    db
-      .from("settlement_daily_operation_snapshots")
-      .select(
-        "id,client_request_id,operating_date,snapshot_time,currency,gross_balance_vnd,settleable_balance_vnd,reserve_balance_vnd,today_payin_vnd,today_payout_vnd,net_funds_change_vnd,forecast_payout_vnd,forecast_payin_vnd,forecast_net_demand_vnd,peak_16_23_pressure_vnd,funding_shortfall_exists,projected_shortfall_vnd,topup_recommended,recommended_topup_usdt,recommended_topup_time,cash_profit_usdt,cash_profit_margin,economic_profit_usdt,economic_profit_margin,fx_opportunity_status,risk_alerts,data_cutoff_snapshot,data_completeness_status,rules_version,shadow_mode,created_at",
-      )
-      .eq("currency", "VND")
-      .order("operating_date", { ascending: false })
-      .order("snapshot_time", { ascending: false })
-      .limit(30),
+    accuracyQuery,
+    validationQueueQuery,
+    savedReportsQuery,
   ]);
   const error =
     activityError ??
@@ -1871,9 +1878,22 @@ export async function getAiDecisionScoreData() {
 
 export async function getHumanApprovalCenterData() {
   const db = serverClient();
-  const control = await getSettlementControlCenterData();
-  const recommendationId =
-    control.current.sourceLearningRecommendationId;
+  const {
+    data: latestRecommendation,
+    error: recommendationError,
+  } = await db
+    .from("settlement_learning_recommendations")
+    .select(
+      "id,recommendation_time,system_topup_recommended,system_recommended_topup_usdt,system_recommended_quote_rate,system_risk_alerts,system_cash_profit_usdt,system_economic_profit_usdt,model_version,shadow_mode",
+    )
+    .eq("currency", "VND")
+    .order("recommendation_time", { ascending: false })
+    .order("id", { ascending: false })
+    .limit(1)
+    .maybeSingle();
+  if (recommendationError) throw recommendationError;
+
+  const recommendationId = latestRecommendation?.id ?? null;
   const [
     { data: reasonCatalog, error: reasonError },
     { data: queue, error: queueError },
@@ -1927,11 +1947,7 @@ export async function getHumanApprovalCenterData() {
 
   return {
     recommendationId,
-    latestRecommendation:
-      control.learningHistory.find(
-        (row) => row.id === recommendationId,
-      ) ?? null,
-    control: control.current,
+    latestRecommendation,
     reasonCatalog: reasonCatalog ?? [],
     queue: queue ?? [],
     learningSummary: summary,

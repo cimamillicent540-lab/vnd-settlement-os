@@ -9,9 +9,17 @@ import {
 
 import { KpiCard, PageHeading } from "@/components/page-parts";
 import { SettlementLearningPanel } from "@/components/settlement-learning-panel";
+import { SsrDataFallback } from "@/components/ssr-data-fallback";
 import { Badge } from "@/components/ui/badge";
 import { Card, CardContent, CardHeader } from "@/components/ui/card";
-import { getSettlementLearningData } from "@/lib/server-data";
+import {
+  classifyServerDataFailure,
+  getSettlementLearningData,
+} from "@/lib/server-data";
+import {
+  loadSsrPageData,
+  SSR_QUERY_PLAN,
+} from "@/lib/ssr-performance";
 import { formatRate, formatUsdt } from "@/lib/utils";
 
 export const metadata: Metadata = {
@@ -33,7 +41,23 @@ function localTime(value: string) {
 }
 
 export default async function SettlementLearningPage() {
-  const data = await getSettlementLearningData();
+  let data: Awaited<ReturnType<typeof getSettlementLearningData>>;
+  try {
+    data = await loadSsrPageData({
+      page: "/settlement-learning",
+      plannedQueries:
+        SSR_QUERY_PLAN.settlementLearning.plannedQueries,
+      loader: getSettlementLearningData,
+    });
+  } catch (error) {
+    return (
+      <SsrDataFallback
+        title="结算学习与人工反馈"
+        subtitle="实时查询降级 · Phase 1 Shadow Mode"
+        failureCode={classifyServerDataFailure(error)}
+      />
+    );
+  }
   const summary = data.summary;
 
   return (

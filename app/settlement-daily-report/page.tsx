@@ -11,13 +11,21 @@ import {
 } from "lucide-react";
 
 import { KpiCard, PageHeading } from "@/components/page-parts";
+import { SsrDataFallback } from "@/components/ssr-data-fallback";
 import {
   SettlementDailyReportActions,
   type DecisionValidationRow,
 } from "@/components/settlement-daily-report-actions";
 import { Badge } from "@/components/ui/badge";
 import { Card, CardContent, CardHeader } from "@/components/ui/card";
-import { getSettlementDailyReportData } from "@/lib/server-data";
+import {
+  classifyServerDataFailure,
+  getSettlementDailyReportData,
+} from "@/lib/server-data";
+import {
+  loadSsrPageData,
+  SSR_QUERY_PLAN,
+} from "@/lib/ssr-performance";
 import {
   formatRate,
   formatUsdt,
@@ -48,7 +56,23 @@ function riskVariant(severity: string | undefined) {
 }
 
 export default async function SettlementDailyReportPage() {
-  const report = await getSettlementDailyReportData();
+  let report: Awaited<ReturnType<typeof getSettlementDailyReportData>>;
+  try {
+    report = await loadSsrPageData({
+      page: "/settlement-daily-report",
+      plannedQueries:
+        SSR_QUERY_PLAN.settlementDailyReport.plannedQueries,
+      loader: getSettlementDailyReportData,
+    });
+  } catch (error) {
+    return (
+      <SsrDataFallback
+        title="CEO Settlement Daily Report"
+        subtitle="日报查询降级 · Shadow Mode"
+        failureCode={classifyServerDataFailure(error)}
+      />
+    );
+  }
   const current = report.current;
   const accuracy = report.accuracy90d;
   const merchants = report.merchantProfitContributions;

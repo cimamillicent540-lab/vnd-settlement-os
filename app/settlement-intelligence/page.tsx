@@ -13,9 +13,17 @@ import {
 
 import { SettlementInputPanel } from "@/components/settlement-input-panel";
 import { KpiCard, PageHeading } from "@/components/page-parts";
+import { SsrDataFallback } from "@/components/ssr-data-fallback";
 import { Badge } from "@/components/ui/badge";
 import { Card, CardContent, CardHeader } from "@/components/ui/card";
-import { getSettlementIntelligenceData } from "@/lib/server-data";
+import {
+  classifyServerDataFailure,
+  getSettlementIntelligenceData,
+} from "@/lib/server-data";
+import {
+  loadSsrPageData,
+  SSR_QUERY_PLAN,
+} from "@/lib/ssr-performance";
 import { formatRate, formatUsdt, formatVnd } from "@/lib/utils";
 
 export const metadata: Metadata = { title: "VND结算智能决策" };
@@ -38,7 +46,23 @@ function riskVariant(severity: string) {
 }
 
 export default async function SettlementIntelligencePage() {
-  const data = await getSettlementIntelligenceData();
+  let data: Awaited<ReturnType<typeof getSettlementIntelligenceData>>;
+  try {
+    data = await loadSsrPageData({
+      page: "/settlement-intelligence",
+      plannedQueries:
+        SSR_QUERY_PLAN.settlementIntelligence.plannedQueries,
+      loader: getSettlementIntelligenceData,
+    });
+  } catch (error) {
+    return (
+      <SsrDataFallback
+        title="VND结算智能决策"
+        subtitle="实时查询降级 · Shadow Mode"
+        failureCode={classifyServerDataFailure(error)}
+      />
+    );
+  }
   const topup = data.topupRecommendation;
   const quote = data.quoteRecommendation;
   const profit = data.profitForecast;
