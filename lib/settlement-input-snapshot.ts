@@ -114,6 +114,7 @@ export interface InventoryBatchInput {
   batch_time: string | null;
   batch_date: string;
   time_precision: "DATE_ONLY" | "EXACT";
+  sequence_within_date?: number | null;
   usdt_amount: string;
   vnd_amount: string;
   cost_rate: string;
@@ -303,6 +304,8 @@ export interface SettlementInputSnapshot {
   input_evidence: SnapshotEvidenceItem[];
   shadow_guard: typeof SETTLEMENT_INPUT_SHADOW_GUARD;
 }
+
+export type SettlementInputSnapshotV1 = SettlementInputSnapshot;
 
 export interface BuildSettlementInputSnapshotOptions {
   asOf: string;
