@@ -312,6 +312,132 @@ describe("Task 3.4D controlled AI settlement intelligence", () => {
     expect(JSON.stringify(result)).not.toContain(secret);
   });
 
+  it("sends store false and excludes identities, account data, raw orders, audit logs, and secrets", async () => {
+    const { snapshot, calculation } = upstream();
+    const sensitiveValues = [
+      "MERCHANT-REAL-NAME-991",
+      "WALLET-0xSECRET991",
+      "ACCOUNT-6222991001",
+      "ORDER-RAW-991",
+      "AUDIT-RAW-991",
+      "BODY-SECRET-991",
+    ];
+    Object.assign(snapshot as unknown as Record<string, unknown>, {
+      merchant_contexts: [{ merchant_name: sensitiveValues[0] }],
+      balance_position: {
+        wallet_address: sensitiveValues[1],
+        account_number: sensitiveValues[2],
+      },
+      raw_order_details: [{ order_id: sensitiveValues[3] }],
+    });
+    Object.assign(calculation as unknown as Record<string, unknown>, {
+      audit_log: sensitiveValues[4],
+    });
+    const requestBodies: Array<Record<string, unknown>> = [];
+    const adapter = new OpenAiSettlementProviderAdapter({
+      apiKey: sensitiveValues[5],
+      fetcher: async (_input, init) => {
+        requestBodies.push(
+          JSON.parse(String(init?.body)) as Record<string, unknown>,
+        );
+        return new Response("{}", { status: 503 });
+      },
+      clock: () => GENERATED_AT,
+    });
+    const result = await generateControlledSettlementAiIntelligence({
+      snapshot,
+      calculation,
+      adapter,
+      model: OPENAI_SETTLEMENT_MODEL_CONFIGURATION,
+      clock: () => GENERATED_AT,
+    });
+
+    expect(result.status).toBe("PROVIDER_FAILED");
+    expect(result.recommendation_snapshot).toBeNull();
+    expect(requestBodies).toHaveLength(2);
+    for (const body of requestBodies) {
+      expect(Object.keys(body).sort()).toEqual([
+        "background",
+        "input",
+        "instructions",
+        "max_output_tokens",
+        "model",
+        "store",
+        "temperature",
+        "text",
+        "top_p",
+      ]);
+      expect(body.store).toBe(false);
+      expect(body.model).toBe(OPENAI_SETTLEMENT_MODEL_ID);
+      const promptInput = String(body.input);
+      const structuredInput = JSON.parse(
+        promptInput.slice(promptInput.indexOf("{")),
+      ) as Record<string, unknown>;
+      expect(Object.keys(structuredInput).sort()).toEqual([
+        "ai_input_digest",
+        "ai_request_id",
+        "approved_fact_projection",
+        "as_of",
+        "blocking_reasons",
+        "contract_version",
+        "currency",
+        "evidence_catalog",
+        "limitations",
+        "mode",
+        "presentation_context",
+        "requested_scopes",
+        "shadow_guard",
+      ]);
+      const serialized = JSON.stringify(body);
+      for (const sensitive of sensitiveValues) {
+        expect(serialized).not.toContain(sensitive);
+      }
+      expect(serialized).not.toMatch(
+        /merchant_name|wallet_address|account_number|raw_order_details|audit_log|api_key/i,
+      );
+    }
+  });
+
+  it("fails closed before provider invocation when a limitation contains free-form sensitive data", async () => {
+    const { snapshot, calculation } = upstream();
+    snapshot.data_quality.limitations = ["Merchant Jane Doe account 991"];
+    calculation.limitations = ["Merchant Jane Doe account 991"];
+    const provider = new OfflineProvider();
+    const result = await generateControlledSettlementAiIntelligence({
+      snapshot,
+      calculation,
+      adapter: provider,
+      model: mockModel,
+      clock: () => GENERATED_AT,
+    });
+    expect(result.status).toBe("PROVIDER_FAILED");
+    expect(result.recommendation_snapshot).toBeNull();
+    expect(provider.calls).toBe(0);
+  });
+
+  it("fails closed when the pinned model is unavailable and never switches models", async () => {
+    const requestedModels: string[] = [];
+    const adapter = new OpenAiSettlementProviderAdapter({
+      apiKey: "test-secret",
+      fetcher: async (_input, init) => {
+        const body = JSON.parse(String(init?.body)) as { model: string };
+        requestedModels.push(body.model);
+        return new Response("{}", { status: 404 });
+      },
+      clock: () => GENERATED_AT,
+    });
+    const result = await generateControlledSettlementAiIntelligence({
+      ...upstream(),
+      adapter,
+      model: OPENAI_SETTLEMENT_MODEL_CONFIGURATION,
+      clock: () => GENERATED_AT,
+    });
+    expect(result.status).toBe("PROVIDER_FAILED");
+    expect(result.recommendation_snapshot).toBeNull();
+    expect(result.attempts).toBe(1);
+    expect(requestedModels).toEqual([OPENAI_SETTLEMENT_MODEL_ID]);
+  });
+
   it("rejects a malformed real-provider draft without creating a snapshot", async () => {
     const adapter = new OpenAiSettlementProviderAdapter({
       apiKey: "test-secret",

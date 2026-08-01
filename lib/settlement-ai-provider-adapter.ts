@@ -430,6 +430,55 @@ export interface BuildAiProviderRequestInput {
   model: ProviderModelMetadataV1;
 }
 
+export const AI_PROVIDER_ALLOWED_DETERMINISTIC_PATHS = Object.freeze([
+  "liquidity_result.calculated_reserve_balance_vnd",
+  "liquidity_result.calculated_settleable_balance_vnd",
+  "liquidity_result.settleable_net_demand_vnd",
+  "liquidity_result.settleable_capacity_gap_vnd",
+  "fifo_cost_result.cost_basis_usdt",
+  "fifo_cost_result.weighted_cost_rate_vnd_per_usdt",
+  "profit_result.aggregate.cash_profit_usdt",
+  "profit_result.aggregate.economic_profit_usdt",
+  "fx_result.p2p_minus_xe.absolute_vnd_per_usdt",
+  "fx_result.p2p_minus_fifo.absolute_vnd_per_usdt",
+  "business_rule_result.cash_profit_margin_band",
+  "business_rule_result.economic_profit_margin_band",
+] as const);
+
+const AI_PROVIDER_ALLOWED_EVIDENCE_SOURCES = new Set([
+  "BALANCE_POSITION",
+  "LIQUIDITY_HISTORY",
+  "VND_INVENTORY",
+  "FX_MARKET_INPUTS",
+  "MERCHANT_CONTEXT",
+  "PROFIT_CONTEXT",
+  "MARKET_CONTEXT",
+]);
+const SAFE_PROVIDER_CODE_PATTERN = /^[A-Z][A-Z0-9_:.\/-]{0,159}$/;
+
+function assertProviderSafeProjection(input: AiRecommendationInputV1) {
+  const allowedPaths = new Set<string>(
+    AI_PROVIDER_ALLOWED_DETERMINISTIC_PATHS,
+  );
+  const factsAreSafe = input.approved_fact_projection.facts.every(
+    (fact) =>
+      fact.source === "DETERMINISTIC_RESULT" &&
+      allowedPaths.has(fact.source_path) &&
+      ["DECIMAL", "ENUM", "BOOLEAN", "NULL"].includes(fact.value_type),
+  );
+  const evidenceIsSafe = input.evidence_catalog.every(
+    (evidence) =>
+      AI_PROVIDER_ALLOWED_EVIDENCE_SOURCES.has(evidence.source_key) &&
+      SAFE_PROVIDER_CODE_PATTERN.test(evidence.completeness_status),
+  );
+  const codesAreSafe = [...input.limitations, ...input.blocking_reasons].every(
+    (code) => SAFE_PROVIDER_CODE_PATTERN.test(code),
+  );
+  if (!factsAreSafe || !evidenceIsSafe || !codesAreSafe) {
+    throw new Error("AI_PROVIDER_DATA_MINIMIZATION_REJECTED");
+  }
+}
+
 export interface AiProviderAdapterV1 {
   readonly contract_version: typeof AI_PROVIDER_ADAPTER_CONTRACT_VERSION;
   readonly adapter_id: string;
@@ -462,6 +511,7 @@ export function buildAiProviderRequest(
   input: BuildAiProviderRequestInput,
 ): AiProviderRequestV1 {
   const aiInput = AiRecommendationInputSchema.parse(input.ai_input);
+  assertProviderSafeProjection(aiInput);
   const promptVersion = PromptVersionMetadataSchema.parse(
     input.prompt_version,
   );

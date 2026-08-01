@@ -16,9 +16,10 @@ import {
   createAiProviderRuntime,
   type AiProviderRuntimeResultV1,
 } from "./settlement-ai-provider-runtime";
-import type {
-  AiProviderAdapterV1,
-  ProviderModelMetadataV1,
+import {
+  AI_PROVIDER_ALLOWED_DETERMINISTIC_PATHS,
+  type AiProviderAdapterV1,
+  type ProviderModelMetadataV1,
 } from "./settlement-ai-provider-adapter";
 import type { SettlementInputSnapshotV1 } from "./settlement-input-snapshot";
 import { stableSnapshotDigest } from "./settlement-input-snapshot";
@@ -28,6 +29,10 @@ import {
   loadSettlementAiMvpPromptBundle,
 } from "./settlement-ai-mvp-prompt";
 
+/*
+ * The provider receives only this allowlisted deterministic projection. The
+ * complete input snapshot and calculation result remain inside the server.
+ */
 export const SETTLEMENT_AI_INTELLIGENCE_MVP_VERSION = "1.0.0" as const;
 
 export type SettlementAiMvpStatus =
@@ -86,6 +91,29 @@ function unitForPath(path: string) {
   return "RATIO" as const;
 }
 
+const DECIMAL_VALUE_PATTERN = /^-?(?:0|[1-9]\d*)(?:\.\d+)?$/;
+const MARGIN_BANDS = new Set([
+  "BELOW_PROTECTION",
+  "BETWEEN_PROTECTION_AND_TARGET",
+  "AT_OR_ABOVE_TARGET",
+  "NOT_EVALUATED",
+]);
+
+function projectedFactValue(path: string, value: string) {
+  if (!AI_PROVIDER_ALLOWED_DETERMINISTIC_PATHS.includes(
+    path as (typeof AI_PROVIDER_ALLOWED_DETERMINISTIC_PATHS)[number],
+  )) {
+    throw new Error("AI_FACT_PATH_NOT_PROVIDER_SAFE");
+  }
+  if (DECIMAL_VALUE_PATTERN.test(value)) {
+    return { value_type: "DECIMAL" as const, unit: unitForPath(path) };
+  }
+  if (path.startsWith("business_rule_result.") && MARGIN_BANDS.has(value)) {
+    return { value_type: "ENUM" as const, unit: "STATUS" as const };
+  }
+  throw new Error("AI_FACT_VALUE_NOT_PROVIDER_SAFE");
+}
+
 function inheritedStatus(
   snapshot: SettlementInputSnapshotV1,
   calculation: SettlementDeterministicCalculationResultV1,
@@ -107,19 +135,23 @@ export async function buildSettlementAiRecommendationInput(
   const status = inheritedStatus(snapshot, calculation);
   const facts = calculation.formula_results
     .filter((formula) => formula.value !== null)
-    .map((formula) => ({
-      fact_id: globalThis.crypto.randomUUID(),
-      source: "DETERMINISTIC_RESULT" as const,
-      source_path: formula.output_path,
-      value_type: "DECIMAL" as const,
-      value: formula.value as string,
-      unit: unitForPath(formula.output_path),
-      status: formula.status,
-      evidence_ids: unique(formula.evidence_refs),
-      limitations: unique(
-        formula.status === "COMPLETE" ? [] : calculation.limitations,
-      ),
-    }));
+    .map((formula) => {
+      const value = formula.value as string;
+      const projection = projectedFactValue(formula.output_path, value);
+      return {
+        fact_id: globalThis.crypto.randomUUID(),
+        source: "DETERMINISTIC_RESULT" as const,
+        source_path: formula.output_path,
+        value_type: projection.value_type,
+        value,
+        unit: projection.unit,
+        status: formula.status,
+        evidence_ids: unique(formula.evidence_refs),
+        limitations: unique(
+          formula.status === "COMPLETE" ? [] : calculation.limitations,
+        ),
+      };
+    });
 
   return finalizeAiRecommendationInput(
     {
