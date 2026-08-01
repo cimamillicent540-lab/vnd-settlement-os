@@ -185,6 +185,18 @@ export const ProviderStructuredInputSchema = z
   })
   .strict();
 
+export const ProviderResolvedPromptContentSchema = z
+  .object({
+    system_prompt: z.string().min(1).max(50_000),
+    developer_prompt: z.string().min(1).max(50_000),
+    user_input_template: z.string().min(1).max(50_000),
+    provider_draft_schema_json: z.record(z.string(), z.unknown()),
+    safety_policy: z.string().min(1).max(50_000),
+    allowed_scopes: z.array(RecommendationScopeSchema).min(1),
+    language: z.string().min(1).max(40),
+  })
+  .strict();
+
 export const AiProviderRequestSchema = z
   .object({
     contract_version: z.literal(AI_PROVIDER_REQUEST_CONTRACT_VERSION),
@@ -391,6 +403,9 @@ export type ProviderModelMetadataV1 = z.infer<
 export type ProviderStructuredInputV1 = z.infer<
   typeof ProviderStructuredInputSchema
 >;
+export type ProviderResolvedPromptContentV1 = z.infer<
+  typeof ProviderResolvedPromptContentSchema
+>;
 export type AiProviderRequestV1 = z.infer<
   typeof AiProviderRequestSchema
 >;
@@ -421,7 +436,11 @@ export interface AiProviderAdapterV1 {
   readonly provider: string;
   generateDraft(
     request: Readonly<AiProviderRequestV1>,
-    options?: Readonly<{ signal?: AbortSignal }>,
+    options: Readonly<{
+      signal?: AbortSignal;
+      prompt_version: PromptVersionMetadataV1;
+      prompt_content: ProviderResolvedPromptContentV1;
+    }>,
   ): Promise<AiProviderResponseV1>;
 }
 

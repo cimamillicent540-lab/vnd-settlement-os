@@ -480,9 +480,22 @@ describe("Task 3.4B-1 adapter and safety boundary", () => {
       },
     };
 
-    expect((await adapter.generateDraft(providerRequest())).outcome).toBe(
-      "TIMEOUT",
-    );
+    expect(
+      (
+        await adapter.generateDraft(providerRequest(), {
+          prompt_version: promptVersion(),
+          prompt_content: {
+            system_prompt: "Explain approved facts only.",
+            developer_prompt: "Return strict JSON in Shadow Mode.",
+            user_input_template: "{{structured_input}}",
+            provider_draft_schema_json: { type: "object" },
+            safety_policy: "No tools and no execution.",
+            allowed_scopes: ["FACT_EXPLANATION"],
+            language: "zh-CN",
+          },
+        })
+      ).outcome,
+    ).toBe("TIMEOUT");
   });
 
   it("contains no provider call, database write, snapshot assembly, approval, or execution capability", () => {
