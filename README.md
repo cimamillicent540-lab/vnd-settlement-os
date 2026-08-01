@@ -18,6 +18,8 @@ npm run dev
 
 Open `http://localhost:3000`. Payout readiness and upstream-format payment preparation are available at `/payment-export`; the daily settlement decision layer is at `/settlement-intelligence`; Phase 1 human feedback and the 90-day learning history are at `/settlement-learning`; the consolidated daily operating view is at `/settlement-control-center`; frozen VND business rules and the operator confirmation center are at `/business-rules`.
 
+The controlled AI area on `/settlement-intelligence` uses the server-only `OPENAI_API_KEY` when an authenticated `admin` or `settlement_operator` manually triggers it. The model and prompt version are pinned in the repository. If the secret is absent, the endpoint returns a safe `PROVIDER_NOT_CONFIGURED` state and makes no external call. For Cloudflare Workers, configure this value as a runtime secret; never expose it as a `NEXT_PUBLIC_` variable or commit it to an environment file.
+
 Apply Supabase migrations in filename order with the Supabase CLI or dashboard SQL editor. The UI can be previewed without credentials using verified demonstration snapshots; database writes require the three values in `.env.example`.
 
 ## Import mapping
