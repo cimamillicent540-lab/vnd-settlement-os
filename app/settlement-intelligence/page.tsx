@@ -12,6 +12,7 @@ import {
 } from "lucide-react";
 
 import { SettlementInputPanel } from "@/components/settlement-input-panel";
+import { SettlementAiIntelligencePanel } from "@/components/settlement-ai-intelligence-panel";
 import { KpiCard, PageHeading } from "@/components/page-parts";
 import { SsrDataFallback } from "@/components/ssr-data-fallback";
 import { Badge } from "@/components/ui/badge";
@@ -514,6 +515,8 @@ export default async function SettlementIntelligencePage() {
           <SettlementInputPanel />
         </CardContent>
       </Card>
+
+      <SettlementAiIntelligencePanel />
     </>
   );
 }

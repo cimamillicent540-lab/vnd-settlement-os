@@ -844,6 +844,29 @@ export function validateDecimalIntegrity(
     });
   }
 
+  const approvedDecimalValues = new Set(
+    requestFacts
+      .filter(
+        (fact) =>
+          fact.value_type === "DECIMAL" &&
+          typeof fact.value === "string",
+      )
+      .map((fact) => fact.value as string),
+  );
+  for (const field of draftTextFields(draft)) {
+    for (const literal of decimalLiterals(field.value)) {
+      if (!approvedDecimalValues.has(literal)) {
+        issues.push(
+          issue(
+            "AI_DECIMAL_LITERAL_NOT_ALLOWLISTED",
+            field.path,
+            `Decimal literal ${literal} is not an exact approved fact value`,
+          ),
+        );
+      }
+    }
+  }
+
   return {
     valid: issues.length === 0,
     bindings: issues.length === 0 ? bindings : [],
@@ -851,10 +874,24 @@ export function validateDecimalIntegrity(
   };
 }
 
+function decimalLiterals(value: string) {
+  return value.match(/(?<![\p{L}\p{N}_])[-+]?\d+(?:\.\d+)?(?![\p{L}\p{N}_])/gu) ?? [];
+}
+
 const RESTRICTED_LANGUAGE_PATTERNS: Array<{
   code: string;
   pattern: RegExp;
 }> = [
+  {
+    code: "PROHIBITED_OPERATIONAL_ACTION",
+    pattern:
+      /\b(?:top\s*up|pay(?:ment)?|trade|transfer|execute|submit|approve|approval|schedule|change\s+(?:the\s+)?quote)\b/i,
+  },
+  {
+    code: "CHINESE_PROHIBITED_OPERATIONAL_ACTION",
+    pattern:
+      /(?:补U|付款|支付|交易|转账|执行|提交|审批|批准|修改报价|新报价|切换通道|上传第三方|修改决策|删除决策)/,
+  },
   {
     code: "EXECUTION_INSTRUCTION",
     pattern:
